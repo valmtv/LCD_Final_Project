@@ -62,17 +62,19 @@ while !x < 5 do (
 printEndLine()
 ```
 
----
+## Thank you
 
 **Authors**:
 
 - Wiktor Szydłowski 75135
 - Valerii Matviiv (REMEMBER TO FILL IN YOUR STUDENT ID)
 
-## Thank you
+---
 
 > *“There are only two kinds of languages: the ones people complain about and the ones nobody uses.”*
 >
 > **Bjarne Stroustrup**
+
+---
 
 [![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/nn2FV4D7)
