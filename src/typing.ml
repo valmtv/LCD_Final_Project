@@ -10,6 +10,7 @@ type ann = calc_type
 type ast =
     Num of int
   | Bool of bool
+  | Id of string
 
   | Add of ann * ast * ast
   | Sub of ann * ast * ast
@@ -28,9 +29,12 @@ type ast =
   | Or of ann * ast * ast
   | Not of ann * ast
 
+  | Let of ann * (string * ast) list * ast
+
 let type_of = function
   | Num _ -> IntT
   | Bool _ -> BoolT
+  | Id _ -> None "Identifier should have been replaced during typechecking"
 
   | Add (ann,_,_) -> ann
   | Sub (ann,_,_) -> ann
@@ -49,6 +53,8 @@ let type_of = function
   | Or (ann,_,_) -> ann
   | Not (ann,_) -> ann
 
+  | Let (ann,_,_) -> ann
+
 let mk_add t e1 e2 = Add (t,e1,e2)
 let mk_sub t e1 e2 = Sub (t,e1,e2)
 let mk_mul t e1 e2 = Mul (t,e1,e2)
@@ -66,6 +72,7 @@ let mk_le t e1 e2 = Le (t,e1,e2)
 let mk_gt t e1 e2 = Gt (t,e1,e2)
 let mk_ge t e1 e2 = Ge (t,e1,e2)
 
+let mk_let t bindings body = Let (t,bindings,body)
 
 let unparse_type = function
   | IntT -> "int"
@@ -102,21 +109,38 @@ let type_a_a_bool_eqop mk e1 e2 =
     then mk BoolT e1 e2
     else mk (None "Expecting equal types") e1 e2
 
-let rec typecheck e =
+let rec typecheck_env env e =
   match e with
   | Ast.Num n -> Num n
   | Ast.Bool b -> Bool b
-  | Ast.Add (e1,e2) -> type_int_int_int_bin_op mk_add (typecheck e1) (typecheck e2)
-  | Ast.Sub (e1,e2) -> type_int_int_int_bin_op mk_sub (typecheck e1) (typecheck e2)
-  | Ast.Mul (e1,e2) -> type_int_int_int_bin_op mk_mul (typecheck e1) (typecheck e2)
-  | Ast.Div (e1,e2) -> type_int_int_int_bin_op mk_div (typecheck e1) (typecheck e2)
-  | Ast.Neg e1 ->  type_int_int_bin_op mk_neg (typecheck e1)
-  | Ast.And (e1,e2) -> type_bool_bool_bool_bin_op mk_and (typecheck e1) (typecheck e2)
-  | Ast.Or (e1,e2) -> type_bool_bool_bool_bin_op mk_or (typecheck e1) (typecheck e2)
-  | Ast.Not e1 -> type_bool_bool_bin_op mk_not (typecheck e1)
-  | Ast.Eq (e1,e2) -> type_a_a_bool_eqop mk_eq (typecheck e1) (typecheck e2)
-  | Ast.Neq (e1,e2) -> type_a_a_bool_eqop mk_neq (typecheck e1) (typecheck e2)
-  | Ast.Lt (e1,e2) -> type_int_int_bool_bin_op mk_lt (typecheck e1) (typecheck e2)
-  | Ast.Le (e1,e2) -> type_int_int_bool_bin_op mk_le (typecheck e1) (typecheck e2)
-  | Ast.Gt (e1,e2) -> type_int_int_bool_bin_op mk_gt (typecheck e1) (typecheck e2)
-  | Ast.Ge (e1,e2) -> type_int_int_bool_bin_op mk_ge (typecheck e1) (typecheck e2)
+  | Ast.Id x ->
+      (match Env.lookup env x with
+       | Some t -> Id x
+       | None -> failwith ("Unbound variable: " ^ x))
+  | Ast.Add (e1,e2) -> type_int_int_int_bin_op mk_add (typecheck_env env e1) (typecheck_env env e2)
+  | Ast.Sub (e1,e2) -> type_int_int_int_bin_op mk_sub (typecheck_env env e1) (typecheck_env env e2)
+  | Ast.Mul (e1,e2) -> type_int_int_int_bin_op mk_mul (typecheck_env env e1) (typecheck_env env e2)
+  | Ast.Div (e1,e2) -> type_int_int_int_bin_op mk_div (typecheck_env env e1) (typecheck_env env e2)
+  | Ast.Neg e1 ->  type_int_int_bin_op mk_neg (typecheck_env env e1)
+  | Ast.And (e1,e2) -> type_bool_bool_bool_bin_op mk_and (typecheck_env env e1) (typecheck_env env e2)
+  | Ast.Or (e1,e2) -> type_bool_bool_bool_bin_op mk_or (typecheck_env env e1) (typecheck_env env e2)
+  | Ast.Not e1 -> type_bool_bool_bin_op mk_not (typecheck_env env e1)
+  | Ast.Eq (e1,e2) -> type_a_a_bool_eqop mk_eq (typecheck_env env e1) (typecheck_env env e2)
+  | Ast.Neq (e1,e2) -> type_a_a_bool_eqop mk_neq (typecheck_env env e1) (typecheck_env env e2)
+  | Ast.Lt (e1,e2) -> type_int_int_bool_bin_op mk_lt (typecheck_env env e1) (typecheck_env env e2)
+  | Ast.Le (e1,e2) -> type_int_int_bool_bin_op mk_le (typecheck_env env e1) (typecheck_env env e2)
+  | Ast.Gt (e1,e2) -> type_int_int_bool_bin_op mk_gt (typecheck_env env e1) (typecheck_env env e2)
+  | Ast.Ge (e1,e2) -> type_int_int_bool_bin_op mk_ge (typecheck_env env e1) (typecheck_env env e2)
+  | Ast.Let (bindings, body) ->
+      let env' = Env.begin_scope env in
+      let env'', typed_bindings = List.fold_left (fun (acc_env, acc_bindings) (id, expr) ->
+        let typed_expr = typecheck_env env' expr in
+        let expr_type = type_of typed_expr in
+        let new_env = Env.bind acc_env id expr_type in
+        (new_env, acc_bindings @ [(id, typed_expr)])
+      ) (env', []) bindings in
+      let typed_body = typecheck_env env'' body in
+      let body_type = type_of typed_body in
+      mk_let body_type typed_bindings typed_body
+
+let typecheck e = typecheck_env Env.empty_env e
