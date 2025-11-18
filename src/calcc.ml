@@ -1,4 +1,4 @@
-(* This is the main entry point for the calc language interpreter *)
+(* This is the main entry point for the calc language compiler *)
 
 open Calc_lib
 
@@ -12,7 +12,6 @@ let parse_lexbuf lb =
 let parse_string s =
   Lexing.from_string s |> parse_lexbuf
 
-
 (* The main loop *)
 let loop () =
   (* First the prompt *)
@@ -21,13 +20,10 @@ let loop () =
   | s ->
       (try
           (* Parse the string and return an AST *)
-          let e = parse_string s in 
-          (* Print it out *)
-          print_string (Ast.unparse_ast 0 e^" : "); flush stdout;
+          let e = parse_string s in
           let e' = Typing.typecheck e in
-          print_endline (Typing.unparse_type (Typing.type_of e'));
           let t = Typing.type_of e' in
-          begin match t with 
+          begin match t with
            | None m -> failwith ("Typing error: " ^ m)
            | _ -> (* Call the compiler and receive the instructions *)
                   let result = Llvm.compile e' in
@@ -44,5 +40,3 @@ let () =
   print_endline "Insert an expression. Ctrl+D to exit.";
   (* Then the loop *)
   loop ()
-
-

@@ -3,6 +3,8 @@
 type calc_type =
   | IntT
   | BoolT
+  | UnitT
+  | RefT of calc_type
   | None of string
 
 type ann = calc_type
@@ -10,7 +12,7 @@ type ann = calc_type
 type ast =
     Num of int
   | Bool of bool
-  | Id of ann * string
+  | Unit
 
   | Add of ann * ast * ast
   | Sub of ann * ast * ast
@@ -30,11 +32,25 @@ type ast =
   | Not of ann * ast
 
   | Let of ann * (string * ast) list * ast
+  | Id of ann * string
+
+  | New of ann * ast
+  | Deref of ann * ast
+  | Assign of ann * ast * ast
+  | Free of ann * ast
+
+  | If of ann * ast * ast * ast
+  | While of ann * ast * ast
+  | Seq of ann * ast * ast
+
+  | PrintInt of ann * ast
+  | PrintBool of ann * ast
+  | PrintEndLine of ann
 
 let type_of = function
   | Num _ -> IntT
   | Bool _ -> BoolT
-  | Id (ann, _) -> ann
+  | Unit -> UnitT
 
   | Add (ann,_,_) -> ann
   | Sub (ann,_,_) -> ann
@@ -54,6 +70,20 @@ let type_of = function
   | Not (ann,_) -> ann
 
   | Let (ann,_,_) -> ann
+  | Id (ann,_) -> ann
+
+  | New (ann,_) -> ann
+  | Deref (ann,_) -> ann
+  | Assign (ann,_,_) -> ann
+  | Free (ann,_) -> ann
+
+  | If (ann,_,_,_) -> ann
+  | While (ann,_,_) -> ann
+  | Seq (ann,_,_) -> ann
+
+  | PrintInt (ann,_) -> ann
+  | PrintBool (ann,_) -> ann
+  | PrintEndLine ann -> ann
 
 let mk_add t e1 e2 = Add (t,e1,e2)
 let mk_sub t e1 e2 = Sub (t,e1,e2)
@@ -74,9 +104,11 @@ let mk_ge t e1 e2 = Ge (t,e1,e2)
 
 let mk_let t bindings body = Let (t,bindings,body)
 
-let unparse_type = function
+let rec unparse_type = function
   | IntT -> "int"
   | BoolT -> "boolean"
+  | UnitT -> "unit"
+  | RefT t -> "ref " ^ unparse_type t
   | None m -> "typing error: "^m
 
 let type_int_int_int_bin_op mk e1 e2 =
@@ -113,24 +145,30 @@ let rec typecheck_env env e =
   match e with
   | Ast.Num n -> Num n
   | Ast.Bool b -> Bool b
+  | Ast.Unit -> Unit
+
   | Ast.Id x ->
       (match Env.lookup env x with
        | Some t -> Id (t, x)
        | None -> failwith ("Unbound variable: " ^ x))
+
   | Ast.Add (e1,e2) -> type_int_int_int_bin_op mk_add (typecheck_env env e1) (typecheck_env env e2)
   | Ast.Sub (e1,e2) -> type_int_int_int_bin_op mk_sub (typecheck_env env e1) (typecheck_env env e2)
   | Ast.Mul (e1,e2) -> type_int_int_int_bin_op mk_mul (typecheck_env env e1) (typecheck_env env e2)
   | Ast.Div (e1,e2) -> type_int_int_int_bin_op mk_div (typecheck_env env e1) (typecheck_env env e2)
   | Ast.Neg e1 ->  type_int_int_bin_op mk_neg (typecheck_env env e1)
+
   | Ast.And (e1,e2) -> type_bool_bool_bool_bin_op mk_and (typecheck_env env e1) (typecheck_env env e2)
   | Ast.Or (e1,e2) -> type_bool_bool_bool_bin_op mk_or (typecheck_env env e1) (typecheck_env env e2)
   | Ast.Not e1 -> type_bool_bool_bin_op mk_not (typecheck_env env e1)
+
   | Ast.Eq (e1,e2) -> type_a_a_bool_eqop mk_eq (typecheck_env env e1) (typecheck_env env e2)
   | Ast.Neq (e1,e2) -> type_a_a_bool_eqop mk_neq (typecheck_env env e1) (typecheck_env env e2)
   | Ast.Lt (e1,e2) -> type_int_int_bool_bin_op mk_lt (typecheck_env env e1) (typecheck_env env e2)
   | Ast.Le (e1,e2) -> type_int_int_bool_bin_op mk_le (typecheck_env env e1) (typecheck_env env e2)
   | Ast.Gt (e1,e2) -> type_int_int_bool_bin_op mk_gt (typecheck_env env e1) (typecheck_env env e2)
   | Ast.Ge (e1,e2) -> type_int_int_bool_bin_op mk_ge (typecheck_env env e1) (typecheck_env env e2)
+
   | Ast.Let (bindings, body) ->
       let env' = Env.begin_scope env in
       let env'', typed_bindings = List.fold_left (fun (acc_env, acc_bindings) (id, expr) ->
@@ -142,5 +180,68 @@ let rec typecheck_env env e =
       let typed_body = typecheck_env env'' body in
       let body_type = type_of typed_body in
       mk_let body_type typed_bindings typed_body
+
+  | Ast.New e1 ->
+      let e1' = typecheck_env env e1 in
+      let t1 = type_of e1' in
+      New (RefT t1, e1')
+
+  | Ast.Deref e1 ->
+      let e1' = typecheck_env env e1 in
+      (match type_of e1' with
+       | RefT t -> Deref (t, e1')
+       | _ -> Deref (None "Expecting reference type", e1'))
+
+  | Ast.Assign (e1, e2) ->
+      let e1' = typecheck_env env e1 in
+      let e2' = typecheck_env env e2 in
+      (match type_of e1' with
+       | RefT t when t = type_of e2' -> Assign (type_of e2', e1', e2')
+       | RefT _ -> Assign (None "Type mismatch in assignment", e1', e2')
+       | _ -> Assign (None "Expecting reference type on left side", e1', e2'))
+
+  | Ast.Free e1 ->
+      let e1' = typecheck_env env e1 in
+      (match type_of e1' with
+       | RefT _ -> Free (UnitT, e1')
+       | _ -> Free (None "Expecting reference type", e1'))
+
+  | Ast.If (e1, e2, e3) ->
+      let e1' = typecheck_env env e1 in
+      let e2' = typecheck_env env e2 in
+      let e3' = typecheck_env env e3 in
+      (match type_of e1' with
+       | BoolT ->
+           if type_of e2' = type_of e3' then
+             If (type_of e2', e1', e2', e3')
+           else
+             If (None "Branches must have same type", e1', e2', e3')
+       | _ -> If (None "Condition must be boolean", e1', e2', e3'))
+
+  | Ast.While (e1, e2) ->
+      let e1' = typecheck_env env e1 in
+      let e2' = typecheck_env env e2 in
+      (match type_of e1' with
+       | BoolT -> While (UnitT, e1', e2')
+       | _ -> While (None "Condition must be boolean", e1', e2'))
+
+  | Ast.Seq (e1, e2) ->
+      let e1' = typecheck_env env e1 in
+      let e2' = typecheck_env env e2 in
+      Seq (type_of e2', e1', e2')
+
+  | Ast.PrintInt e1 ->
+      let e1' = typecheck_env env e1 in
+      (match type_of e1' with
+       | IntT -> PrintInt (UnitT, e1')
+       | _ -> PrintInt (None "Expecting integer", e1'))
+
+  | Ast.PrintBool e1 ->
+      let e1' = typecheck_env env e1 in
+      (match type_of e1' with
+       | BoolT -> PrintBool (UnitT, e1')
+       | _ -> PrintBool (None "Expecting boolean", e1'))
+
+  | Ast.PrintEndLine -> PrintEndLine UnitT
 
 let typecheck e = typecheck_env Env.empty_env e

@@ -5,10 +5,14 @@ open Ast
 type result =
   | IntV of int
   | BoolV of bool
+  | UnitV
+  | RefV of result ref
 
-let unparse_result = function
+let rec unparse_result = function
   | IntV n -> string_of_int n
   | BoolV b -> string_of_bool b
+  | UnitV -> "()"
+  | RefV r -> "<ref " ^ unparse_result !r ^ ">"
 
 let int_int_binop f r1 r2 =
   match r1, r2 with
@@ -41,15 +45,19 @@ let rec eval_env env e =
   match e with
   | Num n -> IntV n
   | Bool b -> BoolV b
+  | Unit -> UnitV
+
   | Id x ->
       (match Env.lookup env x with
        | Some v -> v
        | None -> failwith ("Unbound variable: " ^ x))
+
   | Add (e1,e2) -> int_int_binop ( + ) (eval_env env e1) (eval_env env e2)
   | Sub (e1,e2) -> int_int_binop ( - ) (eval_env env e1) (eval_env env e2)
   | Mul (e1,e2) -> int_int_binop ( * ) (eval_env env e1) (eval_env env e2)
   | Div (e1,e2) -> int_int_binop ( / ) (eval_env env e1) (eval_env env e2)
   | Neg e1 ->  int_int_binop (-) (IntV 0) (eval_env env e1)
+
   (* Short-circuit evaluation for And *)
   | And (e1,e2) -> begin match eval_env env e1 with
                      | BoolV true -> eval_env env e2
@@ -66,12 +74,14 @@ let rec eval_env env e =
                 | BoolV b -> BoolV (not b)
                 | _ -> failwith "Runtime typing error"
               end
+
   | Eq (e1,e2) -> a_a_bool_eq (eval_env env e1) (eval_env env e2)
   | Neq (e1,e2) -> a_a_bool_neq (eval_env env e1) (eval_env env e2)
   | Lt (e1,e2) -> int_int_bool_binop ( < ) (eval_env env e1) (eval_env env e2)
   | Le (e1,e2) -> int_int_bool_binop ( <= ) (eval_env env e1) (eval_env env e2)
   | Gt (e1,e2) -> int_int_bool_binop ( > ) (eval_env env e1) (eval_env env e2)
   | Ge (e1,e2) -> int_int_bool_binop ( >= ) (eval_env env e1) (eval_env env e2)
+
   | Let (bindings, body) ->
       let env' = Env.begin_scope env in
       let env'' = List.fold_left (fun acc_env (id, expr) ->
@@ -79,5 +89,55 @@ let rec eval_env env e =
         Env.bind acc_env id value
       ) env' bindings in
       eval_env env'' body
+
+  | New e1 ->
+      let v = eval_env env e1 in
+      RefV (Mem.new_ref v)
+
+  | Deref e1 ->
+      (match eval_env env e1 with
+       | RefV r -> Mem.deref r
+       | _ -> failwith "Runtime error: dereferencing non-reference")
+
+  | Assign (e1, e2) ->
+      let v2 = eval_env env e2 in
+      (match eval_env env e1 with
+       | RefV r -> Mem.assign r v2; v2
+       | _ -> failwith "Runtime error: assigning to non-reference")
+
+  | Free e1 ->
+      (match eval_env env e1 with
+       | RefV r -> Mem.free r; UnitV
+       | _ -> failwith "Runtime error: freeing non-reference")
+
+  | If (e1, e2, e3) ->
+      (match eval_env env e1 with
+       | BoolV true -> eval_env env e2
+       | BoolV false -> eval_env env e3
+       | _ -> failwith "Runtime error: condition must be boolean")
+
+  | While (e1, e2) ->
+      let rec loop () =
+        match eval_env env e1 with
+        | BoolV true -> let _ = eval_env env e2 in loop ()
+        | BoolV false -> UnitV
+        | _ -> failwith "Runtime error: condition must be boolean"
+      in loop ()
+
+  | Seq (e1, e2) ->
+      let _ = eval_env env e1 in
+      eval_env env e2
+
+  | PrintInt e1 ->
+      (match eval_env env e1 with
+       | IntV n -> print_int n; UnitV
+       | _ -> failwith "Runtime error: printInt expects integer")
+
+  | PrintBool e1 ->
+      (match eval_env env e1 with
+       | BoolV b -> print_string (string_of_bool b); UnitV
+       | _ -> failwith "Runtime error: printBool expects boolean")
+
+  | PrintEndLine -> print_newline (); UnitV
 
 let eval e = eval_env Env.empty_env e

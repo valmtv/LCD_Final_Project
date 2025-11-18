@@ -4,7 +4,7 @@
 type ast =
     Num of int
   | Bool of bool
-  | Id of string
+  | Unit
 
   | Add of ast * ast
   | Sub of ast * ast
@@ -24,6 +24,20 @@ type ast =
   | Not of ast
 
   | Let of (string * ast) list * ast
+  | Id of string
+
+  | New of ast
+  | Deref of ast
+  | Assign of ast * ast
+  | Free of ast
+
+  | If of ast * ast * ast
+  | While of ast * ast
+  | Seq of ast * ast
+
+  | PrintInt of ast
+  | PrintBool of ast
+  | PrintEndLine
 
 let paren = fun p q s -> if p > q then "("^s^")" else s
 
@@ -32,7 +46,7 @@ let rec unparse_ast p e =
   match e with
   | Num x -> string_of_int x
   | Bool b -> string_of_bool b
-  | Id x -> x
+  | Unit -> "()"
   | Add (e1,e2) -> paren p 10 (unparse_ast 10 e1 ^ " + " ^ unparse_ast 10 e2)
   | Sub (e1,e2) -> paren p 10 (unparse_ast 10 e1 ^ " - " ^ unparse_ast 11 e2)
   | Mul (e1,e2) -> paren p 30 (unparse_ast 20 e1 ^ " * " ^ unparse_ast 20 e2)
@@ -51,3 +65,14 @@ let rec unparse_ast p e =
       let unparse_binding (id, expr) = id ^ " = " ^ unparse_ast 0 expr in
       let bindings_str = String.concat " and " (List.map unparse_binding bindings) in
       paren p 1 ("let " ^ bindings_str ^ " in " ^ unparse_ast 1 body)
+  | Id x -> x
+  | New e -> "new(" ^ unparse_ast 0 e ^ ")"
+  | Deref e -> "!" ^ unparse_ast 30 e
+  | Assign (e1, e2) -> paren p 2 (unparse_ast 3 e1 ^ " := " ^ unparse_ast 2 e2)
+  | Free e -> "free(" ^ unparse_ast 0 e ^ ")"
+  | If (e1, e2, e3) -> paren p 1 ("if " ^ unparse_ast 0 e1 ^ " then " ^ unparse_ast 0 e2 ^ " else " ^ unparse_ast 0 e3)
+  | While (e1, e2) -> paren p 1 ("while " ^ unparse_ast 0 e1 ^ " do " ^ unparse_ast 0 e2)
+  | Seq (e1, e2) -> paren p 1 (unparse_ast 1 e1 ^ "; " ^ unparse_ast 1 e2)
+  | PrintInt e -> "printInt(" ^ unparse_ast 0 e ^ ")"
+  | PrintBool e -> "printBool(" ^ unparse_ast 0 e ^ ")"
+  | PrintEndLine -> "printEndLine()"

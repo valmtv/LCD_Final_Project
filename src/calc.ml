@@ -19,14 +19,13 @@ let () =
     match read_line () with
     | s ->
         (try
-           let e = parse_string s in 
-           print_string (Ast.unparse_ast 100 e^" "); flush stdout;
+           let e = parse_string s in
            let e' = Typing.typecheck e in
            let t = Typing.type_of e' in
-           begin match t with 
+           begin match t with
            | None m -> failwith ("Typing error: " ^ m)
-           | _ -> let v = Eval.eval e in
-                  print_endline (" = "^(Eval.unparse_result v^ " : "^ Typing.unparse_type t))
+           | _ -> let _v = Eval.eval e in
+                  ()
            end
          with Failure msg ->
            Printf.eprintf "Error: %s\n%!" msg);
@@ -34,4 +33,3 @@ let () =
     | exception End_of_file -> print_endline "\nGoodbye!"
   in
   loop ()
- 
