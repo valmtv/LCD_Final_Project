@@ -1,7 +1,6 @@
-
 (library
  (name calc_lib)
- (modules typing eval llvm ast lexer parser))
+ (modules typing eval llvm ast lexer parser env))
 
 (ocamllex
  (modules lexer))
@@ -13,5 +12,6 @@
  (public_names calc calcc)
  (names calc calcc)
  (modules calc calcc)
- (flags (:standard -w -32 -w -33))
+ (flags
+  (:standard -w -32 -w -33))
  (libraries calc_lib))
