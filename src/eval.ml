@@ -37,34 +37,47 @@ let a_a_bool_neq r1 r2 =
   | BoolV n1, BoolV n2 -> BoolV (n1 <> n2)
   | _ -> failwith "Runtime typing error"
 
-let rec eval e =
+let rec eval_env env e =
   match e with
   | Num n -> IntV n
   | Bool b -> BoolV b
-  | Add (e1,e2) -> int_int_binop ( + ) (eval e1) (eval e2)
-  | Sub (e1,e2) -> int_int_binop ( - ) (eval e1) (eval e2)
-  | Mul (e1,e2) -> int_int_binop ( * ) (eval e1) (eval e2)
-  | Div (e1,e2) -> int_int_binop ( / ) (eval e1) (eval e2)
-  | Neg e1 ->  int_int_binop (-) (IntV 0) (eval e1)
+  | Id x ->
+      (match Env.lookup env x with
+       | Some v -> v
+       | None -> failwith ("Unbound variable: " ^ x))
+  | Add (e1,e2) -> int_int_binop ( + ) (eval_env env e1) (eval_env env e2)
+  | Sub (e1,e2) -> int_int_binop ( - ) (eval_env env e1) (eval_env env e2)
+  | Mul (e1,e2) -> int_int_binop ( * ) (eval_env env e1) (eval_env env e2)
+  | Div (e1,e2) -> int_int_binop ( / ) (eval_env env e1) (eval_env env e2)
+  | Neg e1 ->  int_int_binop (-) (IntV 0) (eval_env env e1)
   (* Short-circuit evaluation for And *)
-  | And (e1,e2) -> begin match eval e1 with
-                     | BoolV true -> eval e2
+  | And (e1,e2) -> begin match eval_env env e1 with
+                     | BoolV true -> eval_env env e2
                      | BoolV false -> BoolV false
                      | _ -> failwith "Runtime typing error"
                    end
   (* Short-circuit evaluation for Or *)
-  | Or (e1,e2) -> begin match eval e1 with
+  | Or (e1,e2) -> begin match eval_env env e1 with
                     | BoolV true -> BoolV true
-                    | BoolV false -> eval e2
+                    | BoolV false -> eval_env env e2
                     | _ -> failwith "Runtime typing error"
                   end
-  | Not e1 -> begin match eval e1 with
+  | Not e1 -> begin match eval_env env e1 with
                 | BoolV b -> BoolV (not b)
                 | _ -> failwith "Runtime typing error"
               end
-  | Eq (e1,e2) -> a_a_bool_eq (eval e1) (eval e2)
-  | Neq (e1,e2) -> a_a_bool_neq (eval e1) (eval e2)
-  | Lt (e1,e2) -> int_int_bool_binop ( < ) (eval e1) (eval e2)
-  | Le (e1,e2) -> int_int_bool_binop ( <= ) (eval e1) (eval e2)
-  | Gt (e1,e2) -> int_int_bool_binop ( > ) (eval e1) (eval e2)
-  | Ge (e1,e2) -> int_int_bool_binop ( >= ) (eval e1) (eval e2)
+  | Eq (e1,e2) -> a_a_bool_eq (eval_env env e1) (eval_env env e2)
+  | Neq (e1,e2) -> a_a_bool_neq (eval_env env e1) (eval_env env e2)
+  | Lt (e1,e2) -> int_int_bool_binop ( < ) (eval_env env e1) (eval_env env e2)
+  | Le (e1,e2) -> int_int_bool_binop ( <= ) (eval_env env e1) (eval_env env e2)
+  | Gt (e1,e2) -> int_int_bool_binop ( > ) (eval_env env e1) (eval_env env e2)
+  | Ge (e1,e2) -> int_int_bool_binop ( >= ) (eval_env env e1) (eval_env env e2)
+  | Let (bindings, body) ->
+      let env' = Env.begin_scope env in
+      let env'' = List.fold_left (fun acc_env (id, expr) ->
+        let value = eval_env env' expr in
+        Env.bind acc_env id value
+      ) env' bindings in
+      eval_env env'' body
+
+let eval e = eval_env Env.empty_env e
