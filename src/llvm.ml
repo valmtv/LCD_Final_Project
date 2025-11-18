@@ -165,7 +165,7 @@ let rec compile_llvm env e label block =
     in
     (Register ret, env1, l1, b1@[call_instr], bs1)
 
-  | Deref (t, e1) ->
+  | Deref (_, e1) ->
     let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
     let ret = new_reg() in
     let call_instr = match type_of e1 with
@@ -176,7 +176,7 @@ let rec compile_llvm env e label block =
     in
     (Register ret, env1, l1, b1@[call_instr], bs1)
 
-  | Assign (t, e1, e2) ->
+  | Assign (_, e1, e2) ->
     let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
     let r2, env2, l2, b2, bs2 = compile_llvm env1 e2 l1 b1 in
     let call_instr = match type_of e1 with
@@ -199,7 +199,7 @@ let rec compile_llvm env e label block =
     let label_else = new_label () in
     let label_end = new_label () in
 
-    let r2, env2, l2, b2, bs2 = compile_llvm env1 e2 label_then [] in
+    let r2, _env2, l2, b2, bs2 = compile_llvm env1 e2 label_then [] in
     let r3, env3, l3, b3, bs3 = compile_llvm env1 e3 label_else [] in
 
     let bs = bs1 @ [(l1, b1 @ [BrI1 (r1, label_then, label_else)])] @
@@ -224,7 +224,7 @@ let rec compile_llvm env e label block =
     let bs_pre = [(label, block @ [BrLabel label_cond])] in
 
     let r1, env1, l1, b1, bs1 = compile_llvm env e1 label_cond [] in
-    let r2, env2, l2, b2, bs2 = compile_llvm env1 e2 label_body [] in
+    let _r2, env2, l2, b2, bs2 = compile_llvm env1 e2 label_body [] in
 
     let bs = bs_pre @ bs1 @ [(l1, b1 @ [BrI1 (r1, label_body, label_end)])] @
              bs2 @ [(l2, b2 @ [BrLabel label_cond])] in
@@ -232,7 +232,7 @@ let rec compile_llvm env e label block =
     (Const 0, env2, label_end, [], bs)
 
   | Seq (_, e1, e2) ->
-    let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
+    let _r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
     let r2, env2, l2, b2, bs2 = compile_llvm env1 e2 l1 b1 in
     (r2, env2, l2, b2, bs1@bs2)
 
@@ -284,7 +284,7 @@ let unparse_result = function
   | Const x -> string_of_int x
   | Register x -> unparse_register x
 
-let rec unparse_type = function
+let unparse_type = function
   | IntT -> "i32"
   | BoolT -> "i1"
   | UnitT -> "i32"
@@ -343,7 +343,7 @@ let print_block (label, instructions) =
 
 let print_blocks bs = List.iter print_block bs
 
-let print_llvm (ret,_env,label,instructions,blocks) _t =
+let print_llvm (_ret,_env,label,instructions,blocks) _t =
     (* Print the prologue *)
     List.iter print_endline prologue;
     (* Print the blocks *)
