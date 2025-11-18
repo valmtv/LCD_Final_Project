@@ -30,3 +30,8 @@ _build/
 
 # Mac files
 .DS_Store
+
+# test files
+test*
+tests*
+test.*

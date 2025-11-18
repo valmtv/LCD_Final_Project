@@ -36,7 +36,7 @@ let rec compile_llvm env e label block =
   | Bool b when b = true -> Const 1, env, label, block, []
   | Bool b when b = false -> Const 0, env, label, block, []
   | Bool _ -> failwith "Invalid boolean value"
-  | Id x ->
+  | Id (_ann, x) ->
       (match Env.lookup env x with
        | Some r -> r, env, label, block, []
        | None -> failwith ("Unbound variable in codegen: " ^ x))

@@ -10,7 +10,7 @@ type ann = calc_type
 type ast =
     Num of int
   | Bool of bool
-  | Id of string
+  | Id of ann * string
 
   | Add of ann * ast * ast
   | Sub of ann * ast * ast
@@ -34,7 +34,7 @@ type ast =
 let type_of = function
   | Num _ -> IntT
   | Bool _ -> BoolT
-  | Id _ -> None "Identifier should have been replaced during typechecking"
+  | Id (ann, _) -> ann
 
   | Add (ann,_,_) -> ann
   | Sub (ann,_,_) -> ann
@@ -115,7 +115,7 @@ let rec typecheck_env env e =
   | Ast.Bool b -> Bool b
   | Ast.Id x ->
       (match Env.lookup env x with
-       | Some _ -> Id x
+       | Some t -> Id (t, x)
        | None -> failwith ("Unbound variable: " ^ x))
   | Ast.Add (e1,e2) -> type_int_int_int_bin_op mk_add (typecheck_env env e1) (typecheck_env env e2)
   | Ast.Sub (e1,e2) -> type_int_int_int_bin_op mk_sub (typecheck_env env e1) (typecheck_env env e2)
