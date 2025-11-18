@@ -23,6 +23,10 @@ type llvm =
   | BrI1 of result * label * label
   | BrLabel of label
   | PhiI1 of register * (result * label) list
+  | PhiI32 of register * (result * label) list
+  | PhiPtr of register * (result * label) list
+  | Call of register * string * (Typing.calc_type * result) list
+  | CallVoid of string * (Typing.calc_type * result) list
 
 let count = ref 0
 let new_reg = fun () -> count := !count + 1; !count
@@ -36,10 +40,13 @@ let rec compile_llvm env e label block =
   | Bool b when b = true -> Const 1, env, label, block, []
   | Bool b when b = false -> Const 0, env, label, block, []
   | Bool _ -> failwith "Invalid boolean value"
-  | Id (_ann, x) ->
-      (match Env.lookup env x with
-       | Some r -> r, env, label, block, []
-       | None -> failwith ("Unbound variable in codegen: " ^ x))
+  | Unit -> Const 0, env, label, block, []
+
+  | Id (_,x) ->
+      begin match Env.lookup env x with
+      | None -> failwith ("Unbound identifier: "^x)
+      | Some r -> (r, env, label, block, [])
+      end
 
   (* Arithmetic operations *)
   | Add (_,e1,e2) ->
@@ -136,7 +143,7 @@ let rec compile_llvm env e label block =
     let ret = new_reg() in
     (Register ret, env2, l2, b2@[CmpGe (ret,r1,r2)], bs1@bs2)
 
-| Let (_,bindings,body) ->
+  | Let(_, bindings, body) ->
     let env' = Env.begin_scope env in
     let env'', l', b', bs' = List.fold_left (fun (acc_env, acc_label, acc_block, acc_blocks) (id, expr) ->
       let r, new_env, new_label, new_block, new_blocks = compile_llvm acc_env expr acc_label acc_block in
@@ -146,16 +153,126 @@ let rec compile_llvm env e label block =
     let r_body, env_final, l_final, b_final, bs_body = compile_llvm env'' body l' b' in
     (r_body, env_final, l_final, b_final, bs' @ bs_body)
 
+  (* Reference operations *)
+  | New (t, e1) ->
+    let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
+    let ret = new_reg() in
+    let call_instr = match t with
+      | RefT IntT -> Call (ret, "new_ref_int", [(IntT, r1)])
+      | RefT BoolT -> Call (ret, "new_ref_bool", [(BoolT, r1)])
+      | RefT (RefT _) -> Call (ret, "new_ref_ref", [(RefT UnitT, r1)])
+      | _ -> failwith "Internal error: new expects ref type"
+    in
+    (Register ret, env1, l1, b1@[call_instr], bs1)
+
+  | Deref (t, e1) ->
+    let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
+    let ret = new_reg() in
+    let call_instr = match type_of e1 with
+      | RefT IntT -> Call (ret, "deref_int", [(RefT IntT, r1)])
+      | RefT BoolT -> Call (ret, "deref_bool", [(RefT BoolT, r1)])
+      | RefT (RefT _) -> Call (ret, "deref_ref", [(RefT (RefT UnitT), r1)])
+      | _ -> failwith "Internal error: deref expects ref type"
+    in
+    (Register ret, env1, l1, b1@[call_instr], bs1)
+
+  | Assign (t, e1, e2) ->
+    let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
+    let r2, env2, l2, b2, bs2 = compile_llvm env1 e2 l1 b1 in
+    let call_instr = match type_of e1 with
+      | RefT IntT -> CallVoid ("assign_int", [(RefT IntT, r1); (IntT, r2)])
+      | RefT BoolT -> CallVoid ("assign_bool", [(RefT BoolT, r1); (BoolT, r2)])
+      | RefT (RefT _) -> CallVoid ("assign_ref", [(RefT (RefT UnitT), r1); (RefT UnitT, r2)])
+      | _ -> failwith "Internal error: assign expects ref type"
+    in
+    (r2, env2, l2, b2@[call_instr], bs1@bs2)
+
+  | Free (_, e1) ->
+    let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
+    let call_instr = CallVoid ("free_ref", [(RefT UnitT, r1)]) in
+    (Const 0, env1, l1, b1@[call_instr], bs1)
+
+  (* Control flow *)
+  | If (t, e1, e2, e3) ->
+    let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
+    let label_then = new_label () in
+    let label_else = new_label () in
+    let label_end = new_label () in
+
+    let r2, env2, l2, b2, bs2 = compile_llvm env1 e2 label_then [] in
+    let r3, env3, l3, b3, bs3 = compile_llvm env1 e3 label_else [] in
+
+    let bs = bs1 @ [(l1, b1 @ [BrI1 (r1, label_then, label_else)])] @
+             bs2 @ [(l2, b2 @ [BrLabel label_end])] @
+             bs3 @ [(l3, b3 @ [BrLabel label_end])] in
+
+    let ret = new_reg() in
+    let phi_instr = match t with
+      | IntT -> PhiI32 (ret, [(r2, l2); (r3, l3)])
+      | BoolT -> PhiI1 (ret, [(r2, l2); (r3, l3)])
+      | RefT _ -> PhiPtr (ret, [(r2, l2); (r3, l3)])
+      | UnitT -> PhiI32 (ret, [(r2, l2); (r3, l3)])
+      | _ -> failwith "Unsupported type in if expression"
+    in
+    (Register ret, env3, label_end, [phi_instr], bs)
+
+  | While (_, e1, e2) ->
+    let label_cond = new_label () in
+    let label_body = new_label () in
+    let label_end = new_label () in
+
+    let bs_pre = [(label, block @ [BrLabel label_cond])] in
+
+    let r1, env1, l1, b1, bs1 = compile_llvm env e1 label_cond [] in
+    let r2, env2, l2, b2, bs2 = compile_llvm env1 e2 label_body [] in
+
+    let bs = bs_pre @ bs1 @ [(l1, b1 @ [BrI1 (r1, label_body, label_end)])] @
+             bs2 @ [(l2, b2 @ [BrLabel label_cond])] in
+
+    (Const 0, env2, label_end, [], bs)
+
+  | Seq (_, e1, e2) ->
+    let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
+    let r2, env2, l2, b2, bs2 = compile_llvm env1 e2 l1 b1 in
+    (r2, env2, l2, b2, bs1@bs2)
+
+  (* Print operations *)
+  | PrintInt (_, e1) ->
+    let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
+    let call_instr = CallVoid ("print_int", [(IntT, r1)]) in
+    (Const 0, env1, l1, b1@[call_instr], bs1)
+
+  | PrintBool (_, e1) ->
+    let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
+    let call_instr = CallVoid ("print_bool", [(BoolT, r1)]) in
+    (Const 0, env1, l1, b1@[call_instr], bs1)
+
+  | PrintEndLine _ ->
+    let call_instr = CallVoid ("print_endline", []) in
+    (Const 0, env, label, block@[call_instr], [])
+
 (* Unparse LLVM functions *)
 
 let prologue =
-  ["@.str = private unnamed_addr constant [4 x i8] c\"%d\\0A\\00\", align 1";
+  ["declare ptr @new_ref_int(i32)";
+   "declare ptr @new_ref_bool(i1)";
+   "declare ptr @new_ref_ref(ptr)";
+   "declare i32 @deref_int(ptr)";
+   "declare i1 @deref_bool(ptr)";
+   "declare ptr @deref_ref(ptr)";
+   "declare void @assign_int(ptr, i32)";
+   "declare void @assign_bool(ptr, i1)";
+   "declare void @assign_ref(ptr, ptr)";
+   "declare void @free_ref(ptr)";
+   "declare void @print_int(i32)";
+   "declare void @print_bool(i1)";
+   "declare void @print_endline()";
+   "";
    "define i32 @main() #0 {"]
 
 let epilogue =
    ["  ret i32 0";
-    "}";
-    "declare i32 @printf(ptr noundef, ...) #1"]
+    "}"]
 
 let unparse_register n = "%"^string_of_int n
 
@@ -167,9 +284,11 @@ let unparse_result = function
   | Const x -> string_of_int x
   | Register x -> unparse_register x
 
-let unparse_type = function
+let rec unparse_type = function
   | IntT -> "i32"
   | BoolT -> "i1"
+  | UnitT -> "i32"
+  | RefT _ -> "ptr"
   | _ -> failwith "Unknown type"
 
 let unparse_llvm_i = function
@@ -187,6 +306,10 @@ let unparse_llvm_i = function
       "  br label "^unparse_label_use label
   | PhiI1 (r, l) ->
       "  "^unparse_register r^" = phi i1 "^String.concat ", " (List.map (fun (r,l) -> "["^unparse_result r^", "^unparse_label_use l^"]") l)
+  | PhiI32 (r, l) ->
+      "  "^unparse_register r^" = phi i32 "^String.concat ", " (List.map (fun (r,l) -> "["^unparse_result r^", "^unparse_label_use l^"]") l)
+  | PhiPtr (r, l) ->
+      "  "^unparse_register r^" = phi ptr "^String.concat ", " (List.map (fun (r,l) -> "["^unparse_result r^", "^unparse_label_use l^"]") l)
   | Xor (r, l1) ->
       "  "^unparse_register r^" = xor i1 "^unparse_result l1^", 1"
   | CmpEq (IntT, r, l1, l2) ->
@@ -207,6 +330,12 @@ let unparse_llvm_i = function
       "  "^unparse_register r^" = icmp sgt i32 "^unparse_result l1^", "^unparse_result l2
   | CmpGe (r, l1, l2) ->
       "  "^unparse_register r^" = icmp sge i32 "^unparse_result l1^", "^unparse_result l2
+  | Call (r, fname, args) ->
+      let arg_strs = List.map (fun (t, v) -> unparse_type t ^ " " ^ unparse_result v) args in
+      "  "^unparse_register r^" = call ptr @"^fname^"("^String.concat ", " arg_strs^")"
+  | CallVoid (fname, args) ->
+      let arg_strs = List.map (fun (t, v) -> unparse_type t ^ " " ^ unparse_result v) args in
+      "  call void @"^fname^"("^String.concat ", " arg_strs^")"
 
 let print_block (label, instructions) =
     print_endline (unparse_label_declaration label);
@@ -214,18 +343,11 @@ let print_block (label, instructions) =
 
 let print_blocks bs = List.iter print_block bs
 
-let emit_printf ret t =
-  let llvm_type = unparse_type t
-  in
-    "  "^unparse_register (new_reg())^" = call i32 (ptr, ...) @printf(ptr noundef @.str, "^llvm_type^" noundef "^unparse_result ret^")"
-
-let print_llvm (ret,_env,label,instructions,blocks) t =
+let print_llvm (ret,_env,label,instructions,blocks) _t =
     (* Print the prologue *)
     List.iter print_endline prologue;
     (* Print the blocks *)
     print_blocks (blocks@[(label,instructions)]);
-    (* Print the instruction printing the result *)
-    print_endline (emit_printf ret t);
     (* Print the epilogue *)
     List.iter print_endline epilogue
 
