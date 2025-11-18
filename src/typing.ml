@@ -115,7 +115,7 @@ let rec typecheck_env env e =
   | Ast.Bool b -> Bool b
   | Ast.Id x ->
       (match Env.lookup env x with
-       | Some t -> Id x
+       | Some _ -> Id x
        | None -> failwith ("Unbound variable: " ^ x))
   | Ast.Add (e1,e2) -> type_int_int_int_bin_op mk_add (typecheck_env env e1) (typecheck_env env e2)
   | Ast.Sub (e1,e2) -> type_int_int_int_bin_op mk_sub (typecheck_env env e1) (typecheck_env env e2)

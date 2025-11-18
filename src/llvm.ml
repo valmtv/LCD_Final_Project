@@ -136,14 +136,15 @@ let rec compile_llvm env e label block =
     let ret = new_reg() in
     (Register ret, env2, l2, b2@[CmpGe (ret,r1,r2)], bs1@bs2)
 
-  | Let (_,bindings,body) ->
+| Let (_,bindings,body) ->
     let env' = Env.begin_scope env in
     let env'', l', b', bs' = List.fold_left (fun (acc_env, acc_label, acc_block, acc_blocks) (id, expr) ->
       let r, new_env, new_label, new_block, new_blocks = compile_llvm acc_env expr acc_label acc_block in
       let bound_env = Env.bind new_env id r in
       (bound_env, new_label, new_block, acc_blocks @ new_blocks)
     ) (env', label, block, []) bindings in
-    compile_llvm env'' body l' b' bs'
+    let r_body, env_final, l_final, b_final, bs_body = compile_llvm env'' body l' b' in
+    (r_body, env_final, l_final, b_final, bs' @ bs_body)
 
 (* Unparse LLVM functions *)
 
