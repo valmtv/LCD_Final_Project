@@ -5,6 +5,7 @@ type calc_type =
   | BoolT
   | UnitT
   | RefT of calc_type
+  | FunT of calc_type * calc_type
   | None of string
 
 type ann = calc_type
@@ -47,6 +48,9 @@ type ast =
   | PrintBool of ann * ast
   | PrintEndLine of ann
 
+  | Fun of ann * string * calc_type * ast
+  | App of ann * ast * ast
+
 let type_of = function
   | Num _ -> IntT
   | Bool _ -> BoolT
@@ -85,6 +89,9 @@ let type_of = function
   | PrintBool (ann,_) -> ann
   | PrintEndLine ann -> ann
 
+  | Fun (ann,_,_,_) -> ann
+  | App (ann,_,_) -> ann
+
 let mk_add t e1 e2 = Add (t,e1,e2)
 let mk_sub t e1 e2 = Sub (t,e1,e2)
 let mk_mul t e1 e2 = Mul (t,e1,e2)
@@ -109,7 +116,15 @@ let rec unparse_type = function
   | BoolT -> "boolean"
   | UnitT -> "unit"
   | RefT t -> "ref " ^ unparse_type t
+  | FunT (t1, t2) -> "(" ^ unparse_type t1 ^ " -> " ^ unparse_type t2 ^ ")"
   | None m -> "typing error: "^m
+
+let rec type_annotation_to_calc_type = function
+  | Ast.TInt -> IntT
+  | Ast.TBool -> BoolT
+  | Ast.TUnit -> UnitT
+  | Ast.TRef t -> RefT (type_annotation_to_calc_type t)
+  | Ast.TFun (t1, t2) -> FunT (type_annotation_to_calc_type t1, type_annotation_to_calc_type t2)
 
 let type_int_int_int_bin_op mk e1 e2 =
   match type_of e1, type_of e2 with
@@ -243,5 +258,24 @@ let rec typecheck_env env e =
        | _ -> PrintBool (None "Expecting boolean", e1'))
 
   | Ast.PrintEndLine -> PrintEndLine UnitT
+
+  | Ast.Fun (param, param_type, body) ->
+      let param_calc_type = type_annotation_to_calc_type param_type in
+      let env' = Env.begin_scope env in
+      let env'' = Env.bind env' param param_calc_type in
+      let typed_body = typecheck_env env'' body in
+      let body_type = type_of typed_body in
+      Fun (FunT (param_calc_type, body_type), param, param_calc_type, typed_body)
+
+  | Ast.App (e1, e2) ->
+      let e1' = typecheck_env env e1 in
+      let e2' = typecheck_env env e2 in
+      (match type_of e1' with
+       | FunT (param_type, return_type) ->
+           if param_type = type_of e2' then
+             App (return_type, e1', e2')
+           else
+             App (None "Function argument type mismatch", e1', e2')
+       | _ -> App (None "Expecting function type", e1', e2'))
 
 let typecheck e = typecheck_env Env.empty_env e
