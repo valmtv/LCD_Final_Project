@@ -29,9 +29,11 @@ type llvm =
   | CallVoid of string * (Typing.calc_type * result) list
   | Bitcast of register * string * result * string
 
-let count = ref 0
-let new_reg = fun () -> count := !count + 1; !count
-let new_label = new_reg
+let reg_count = ref 0
+let label_count = ref 0
+
+let new_reg = fun () -> reg_count := !reg_count + 1; !reg_count
+let new_label = fun () -> label_count := !label_count + 1; !label_count
 
 (* Function counter for generating unique function names *)
 let fun_count = ref 0
@@ -301,8 +303,10 @@ let rec compile_llvm env e label block =
     let body_env' = Env.bind body_env param param_reg in
 
     (* Use a temporary counter for function body *)
-    let saved_count = !count in
-    count := 2; (* Start at 2 for function body registers *)
+    let saved_reg_count = !reg_count in
+    let saved_label_count = !label_count in
+    reg_count := 2; (* Start at 2 for function body registers *)
+    label_count := 2; (* Start at 2 for function body labels *)
     let saved_fun_count = !fun_count in
     fun_count := !fun_count - 1; (* Restore fun_count since we incremented it *)
 
@@ -311,7 +315,8 @@ let rec compile_llvm env e label block =
 
     (* Restore counter for main function *)
     fun_count := saved_fun_count;
-    count := saved_count;
+    reg_count := saved_reg_count;
+    label_count := saved_label_count;
 
     function_defs := {
       name = fun_name;
@@ -497,6 +502,7 @@ let print_llvm (_ret,_env,label,instructions,blocks) _t =
 
 let compile e =
   function_defs := [];
-  count := 0;
+  reg_count := 0;
+  label_count := 0;
   fun_count := 0;
   compile_llvm Env.empty_env e 0 []
