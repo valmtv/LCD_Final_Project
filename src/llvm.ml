@@ -365,7 +365,7 @@ let prologue =
    "declare void @assign_ref(ptr, ptr)";
    "declare void @free_ref(ptr)";
    "declare void @print_int(i32)";
-   "declare void @print_bool(i1)";
+   "declare void @print_bool(i32)";
    "declare void @print_endline()";
    "declare ptr @create_closure(ptr, ptr)";
    "declare i32 @apply_closure_i32_i32(ptr, i32)";
