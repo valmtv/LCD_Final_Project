@@ -276,7 +276,7 @@ let rec compile_llvm env e label block =
 
   | PrintBool (_, e1) ->
     let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
-    let call_instr = CallVoid ("print_bool", [(BoolT, r1)]) in
+    let call_instr = CallVoid ("print_bool", [(IntT, r1)]) in  (* Use IntT since bools are i32 *)
     (Const 0, env1, l1, b1@[call_instr], bs1)
 
   | PrintEndLine _ ->

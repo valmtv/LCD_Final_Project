@@ -48,7 +48,7 @@ void print_int(int v) {
     printf("%d", v);
 }
 
-void print_bool(bool v) {
+void print_bool(int v) {
     printf("%s", v ? "true" : "false");
 }
 
