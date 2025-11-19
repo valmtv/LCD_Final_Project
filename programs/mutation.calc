@@ -1,0 +1,6 @@
+let counter = new(0) in
+counter := !counter + 1;
+counter := !counter + 1;
+counter := !counter + 1;
+printInt(!counter);
+printEndLine()

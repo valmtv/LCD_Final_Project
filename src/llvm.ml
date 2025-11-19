@@ -311,7 +311,7 @@ let rec compile_llvm env e label block =
     fun_count := !fun_count - 1; (* Restore fun_count since we incremented it *)
 
     let body_result, _body_env_final, body_label, body_block, body_blocks =
-      compile_llvm body_env' body "L1" [] in
+      compile_llvm body_env' body "entry" [] in
 
     (* Restore counter for main function *)
     fun_count := saved_fun_count;

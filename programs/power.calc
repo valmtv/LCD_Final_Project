@@ -1,0 +1,11 @@
+let power = fun (n: int) ->
+  (let result = new(1) in
+  let counter = new(n) in
+  while !counter > 0 do (
+    result := !result * 2;
+    counter := !counter - 1
+  );
+  !result)
+in
+printInt(power(5));
+printEndLine()
