@@ -43,27 +43,36 @@ A compiler for the CALC expression language, featuring arithmetic, boolean opera
 - **Runtime** (`mem_runtime.c`, `closure_runtime.c`): C runtime for memory and closure management
 - **Environment** (`env.ml`): Scoped environment for variable bindings
 
-
 ## Building & Running
 
 ```bash
 # Build
-dune build
+make build
 
-# Run interpreter
-dune exec calc
+# Run interpreter (interactive REPL)
+make repl
 
-# Run compiler
-dune exec calcc
+# Compile and run a program
+make run FILE=program.calc
 
-# Compile generated LLVM
-clang -c mem_runtime.c -o mem_runtime.o
-clang prog.ll mem_runtime.o -o prog
-./prog
+# Compile to LLVM only
+make compile FILE=program.calc OUTPUT=program.ll
+
+# Clean
+make clean
 ```
 
-## Example Programs
+## Usage
 
+Put your `.calc` files in `programs/` directory, then:
+
+```bash
+make run FILE=myprogram.calc
+```
+
+All build artifacts go to `build/` directory.
+
+## Example Programs
 
 ### Basic Function
 
@@ -93,7 +102,7 @@ printEndLine()
 
 ---
 
-> *“There are only two kinds of languages: the ones people complain about and the ones nobody uses.”*
+> *"There are only two kinds of languages: the ones people complain about and the ones nobody uses."*
 >
 > **Bjarne Stroustrup**
 
