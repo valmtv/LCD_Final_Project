@@ -16,7 +16,8 @@ let () =
   try
     (* Read the entire input from stdin *)
     let e = parse_channel stdin in
-    let e' = Typing.typecheck e in
+    let e_opt = Optimizer.optimize e in
+    let e' = Typing.typecheck e_opt in
     let t = Typing.type_of e' in
     begin match t with
      | None m ->
