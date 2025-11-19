@@ -43,7 +43,7 @@ A compiler for the CALC expression language, featuring arithmetic, boolean opera
 - **Runtime** (`mem_runtime.c`, `closure_runtime.c`): C runtime for memory and closure management
 - **Environment** (`env.ml`): Scoped environment for variable bindings
 
-## Building & Running
+## Building Running & Testing in the programs/ folder
 
 ```bash
 # Build
@@ -55,11 +55,14 @@ make repl
 # Compile and run a program
 make run FILE=program.calc
 
-# Run all programs in the programs/ folder
+## Running Tests and Optimizations
+You can run individual programs or the full test suite. By default, optimizations are **disabled**.
+
+# Run standard test suite
 make test
 
-# Compile to LLVM only
-make compile FILE=program.calc OUTPUT=program.ll
+# Run test suite with optimizations enabled
+make test OPT=1
 
 # Clean
 make clean

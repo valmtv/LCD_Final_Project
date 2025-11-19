@@ -1,6 +1,6 @@
 (library
  (name calc_lib)
- (modules typing eval llvm ast lexer parser env mem))
+ (modules typing eval llvm ast lexer parser env mem optimizer))
 
 (ocamllex
  (modules lexer))
