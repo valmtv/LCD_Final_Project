@@ -1,3 +1,0 @@
-let isNegative = fun (x: int) -> x < 0 in
-printBool(isNegative(5));
-printEndLine()

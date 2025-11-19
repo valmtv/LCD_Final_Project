@@ -1,6 +1,0 @@
-let isEqual = fun (x: int) -> x = 42 in
-let isGreater = fun (x: int) -> x > 10 in
-printBool(isEqual(42));
-printEndLine();
-printBool(isGreater(15));
-printEndLine()

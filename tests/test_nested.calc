@@ -1,5 +1,0 @@
-let f = fun (x: int) -> x + 1 in
-let g = fun (x: int) -> x * 2 in
-let h = fun (x: int) -> x - 3 in
-printInt(h(g(f(10))));
-printEndLine()

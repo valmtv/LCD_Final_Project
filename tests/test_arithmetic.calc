@@ -1,3 +1,0 @@
-let compute = fun (x: int) -> (x + 5) * 2 - 3 in
-printInt(compute(10));
-printEndLine()

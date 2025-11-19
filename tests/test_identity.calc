@@ -1,3 +1,0 @@
-let id = fun (x: int) -> x in
-printInt(id(42));
-printEndLine()

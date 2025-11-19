@@ -1,6 +1,0 @@
-let double = fun (x: int) -> x * 2 in
-let triple = fun (x: int) -> x * 3 in
-let a = double(5) in
-let b = triple(4) in
-printInt(a + b);
-printEndLine()

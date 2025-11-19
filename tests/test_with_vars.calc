@@ -1,5 +1,0 @@
-let square = fun (x: int) -> x * x in
-let num = 7 in
-let result = square(num) in
-printInt(result);
-printEndLine()

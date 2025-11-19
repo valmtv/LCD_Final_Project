@@ -1,4 +1,0 @@
-let inc = fun (x: int) -> x + 1 in
-let double = fun (x: int) -> x * 2 in
-printInt(double(inc(20)));
-printEndLine()
