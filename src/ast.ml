@@ -1,5 +1,13 @@
 (* This file contains the description of the calc language and some utils related to the AST *)
 
+(* Type annotations for function parameters *)
+type type_annotation =
+  | TInt
+  | TBool
+  | TUnit
+  | TRef of type_annotation
+  | TFun of type_annotation * type_annotation
+
 (* The abstract syntax tree (AST) type for the calc language *)
 type ast =
     Num of int
@@ -39,6 +47,16 @@ type ast =
   | PrintBool of ast
   | PrintEndLine
 
+  | Fun of string * type_annotation * ast
+  | App of ast * ast
+
+let rec unparse_type_annotation = function
+  | TInt -> "int"
+  | TBool -> "bool"
+  | TUnit -> "unit"
+  | TRef t -> "ref " ^ unparse_type_annotation t
+  | TFun (t1, t2) -> "(" ^ unparse_type_annotation t1 ^ " -> " ^ unparse_type_annotation t2 ^ ")"
+
 let paren = fun p q s -> if p > q then "("^s^")" else s
 
 (* This function converts an AST back to a string representation of the expression *)
@@ -76,3 +94,5 @@ let rec unparse_ast p e =
   | PrintInt e -> "printInt(" ^ unparse_ast 0 e ^ ")"
   | PrintBool e -> "printBool(" ^ unparse_ast 0 e ^ ")"
   | PrintEndLine -> "printEndLine()"
+  | Fun (param, typ, body) -> paren p 1 ("fun (" ^ param ^ ": " ^ unparse_type_annotation typ ^ ") -> " ^ unparse_ast 1 body)
+  | App (e1, e2) -> paren p 40 (unparse_ast 40 e1 ^ "(" ^ unparse_ast 0 e2 ^ ")")

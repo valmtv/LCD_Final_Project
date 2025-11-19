@@ -21,10 +21,17 @@ rule read = parse
   | "printInt"               { PRINTINT }
   | "printBool"              { PRINTBOOL }
   | "printEndLine"           { PRINTENDLINE }
+  | "fun"                    { FUN }
+  | "int"                    { TINT }
+  | "bool"                   { TBOOL }
+  | "unit"                   { TUNIT }
+  | "ref"                    { TREF }
   | "&&"                     { AND }
   | "||"                     { OR }
   | "not"                    { NOT }
+  | "->"                     { ARROW }
   | ":="                     { ASSIGN }
+  | ":"                      { COLON }
   | "="                      { EQ }
   | "!="                     { NEQ }
   | "!"                      { DEREF }
@@ -39,6 +46,7 @@ rule read = parse
   | '('                      { LPAREN }
   | ')'                      { RPAREN }
   | ';'                      { SEMICOLON }
+  | ','                      { COMMA }
   | ['a'-'z' 'A'-'Z']['a'-'z' 'A'-'Z' '0'-'9' '_']* as id { ID id }
   | eof                      { EOF }
   | _ as c                   { raise (Lexing_error (Printf.sprintf "Unexpected char: %c" c)) }

@@ -32,6 +32,13 @@ let count = ref 0
 let new_reg = fun () -> count := !count + 1; !count
 let new_label = new_reg
 
+(* Function counter for generating unique function names *)
+let fun_count = ref 0
+let new_fun_id () = fun_count := !fun_count + 1; !fun_count
+
+(* Store generated function definitions *)
+let function_defs = ref []
+
 (* Code generation function *)
 
 let rec compile_llvm env e label block =
@@ -161,6 +168,7 @@ let rec compile_llvm env e label block =
       | RefT IntT -> Call (ret, "new_ref_int", [(IntT, r1)])
       | RefT BoolT -> Call (ret, "new_ref_bool", [(BoolT, r1)])
       | RefT (RefT _) -> Call (ret, "new_ref_ref", [(RefT UnitT, r1)])
+      | RefT (FunT _) -> Call (ret, "new_ref_ref", [(RefT UnitT, r1)])
       | _ -> failwith "Internal error: new expects ref type"
     in
     (Register ret, env1, l1, b1@[call_instr], bs1)
@@ -172,6 +180,7 @@ let rec compile_llvm env e label block =
       | RefT IntT -> Call (ret, "deref_int", [(RefT IntT, r1)])
       | RefT BoolT -> Call (ret, "deref_bool", [(RefT BoolT, r1)])
       | RefT (RefT _) -> Call (ret, "deref_ref", [(RefT (RefT UnitT), r1)])
+      | RefT (FunT _) -> Call (ret, "deref_ref", [(RefT UnitT, r1)])
       | _ -> failwith "Internal error: deref expects ref type"
     in
     (Register ret, env1, l1, b1@[call_instr], bs1)
@@ -183,6 +192,7 @@ let rec compile_llvm env e label block =
       | RefT IntT -> CallVoid ("assign_int", [(RefT IntT, r1); (IntT, r2)])
       | RefT BoolT -> CallVoid ("assign_bool", [(RefT BoolT, r1); (BoolT, r2)])
       | RefT (RefT _) -> CallVoid ("assign_ref", [(RefT (RefT UnitT), r1); (RefT UnitT, r2)])
+      | RefT (FunT _) -> CallVoid ("assign_ref", [(RefT UnitT, r1); (RefT UnitT, r2)])
       | _ -> failwith "Internal error: assign expects ref type"
     in
     (r2, env2, l2, b2@[call_instr], bs1@bs2)
@@ -211,6 +221,7 @@ let rec compile_llvm env e label block =
       | IntT -> PhiI32 (ret, [(r2, l2); (r3, l3)])
       | BoolT -> PhiI1 (ret, [(r2, l2); (r3, l3)])
       | RefT _ -> PhiPtr (ret, [(r2, l2); (r3, l3)])
+      | FunT _ -> PhiPtr (ret, [(r2, l2); (r3, l3)])
       | UnitT -> PhiI32 (ret, [(r2, l2); (r3, l3)])
       | _ -> failwith "Unsupported type in if expression"
     in
@@ -251,6 +262,40 @@ let rec compile_llvm env e label block =
     let call_instr = CallVoid ("print_endline", []) in
     (Const 0, env, label, block@[call_instr], [])
 
+  (* Function operations *)
+  | Fun (t, param, param_type, body) ->
+    let fun_id = new_fun_id () in
+    let fun_name = "lambda_" ^ string_of_int fun_id in
+
+    (* Compile the function body in a new environment with the parameter *)
+    let param_env = Env.begin_scope Env.empty_env in
+    let param_reg = Register (new_reg()) in
+    let body_env = Env.bind param_env param param_reg in
+
+    let body_result, _body_env, body_label, body_block, body_blocks =
+      compile_llvm body_env body 0 [] in
+
+    (* Store the function definition *)
+    let return_type = match t with
+      | FunT (_, ret_t) -> ret_t
+      | _ -> failwith "Internal error: Fun must have FunT type"
+    in
+
+    function_defs := (fun_name, param_type, return_type, param_reg,
+                      body_result, body_label, body_block, body_blocks) :: !function_defs;
+
+    (* Create a closure - for now just return function pointer *)
+    let ret = new_reg() in
+    let call_instr = Call (ret, "create_closure", [(FunT (param_type, return_type), Const fun_id)]) in
+    (Register ret, env, label, block@[call_instr], [])
+
+  | App (_, e1, e2) ->
+    let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
+    let r2, env2, l2, b2, bs2 = compile_llvm env1 e2 l1 b1 in
+    let ret = new_reg() in
+    let call_instr = Call (ret, "apply_closure", [(FunT (UnitT, UnitT), r1); (UnitT, r2)]) in
+    (Register ret, env2, l2, b2@[call_instr], bs1@bs2)
+
 (* Unparse LLVM functions *)
 
 let prologue =
@@ -267,8 +312,9 @@ let prologue =
    "declare void @print_int(i32)";
    "declare void @print_bool(i1)";
    "declare void @print_endline()";
-   "";
-   "define i32 @main() #0 {"]
+   "declare ptr @create_closure(i32)";
+   "declare i32 @apply_closure(ptr, i32)";
+   ""]
 
 let epilogue =
    ["  ret i32 0";
@@ -289,6 +335,7 @@ let unparse_type = function
   | BoolT -> "i1"
   | UnitT -> "i32"
   | RefT _ -> "ptr"
+  | FunT _ -> "ptr"
   | _ -> failwith "Unknown type"
 
 let unparse_llvm_i = function
@@ -343,12 +390,26 @@ let print_block (label, instructions) =
 
 let print_blocks bs = List.iter print_block bs
 
+let print_function_def (_fun_name, _param_type, _return_type, _param_reg,
+                        _body_result, _body_label, _body_block, _body_blocks) =
+  (* For now, we'll skip printing individual function definitions *)
+  (* In a full implementation, each lambda would be a separate LLVM function *)
+  ()
+
 let print_llvm (_ret,_env,label,instructions,blocks) _t =
     (* Print the prologue *)
     List.iter print_endline prologue;
+
+    (* Print function definitions *)
+    List.iter print_function_def !function_defs;
+
+    (* Print main function *)
+    print_endline "define i32 @main() #0 {";
     (* Print the blocks *)
     print_blocks (blocks@[(label,instructions)]);
     (* Print the epilogue *)
     List.iter print_endline epilogue
 
-let compile e = compile_llvm Env.empty_env e 0 []
+let compile e =
+  function_defs := [];
+  compile_llvm Env.empty_env e 0 []

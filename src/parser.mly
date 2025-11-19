@@ -9,7 +9,8 @@ open Ast
 %token IF THEN ELSE WHILE DO
 %token NEW FREE DEREF ASSIGN
 %token PRINTINT PRINTBOOL PRINTENDLINE
-%token SEMICOLON
+%token SEMICOLON COMMA COLON ARROW
+%token FUN TINT TBOOL TUNIT TREF
 
 %start main
 %type <Ast.ast> main
@@ -22,11 +23,30 @@ expr:
   | LET bindings IN expr  { Let($2, $4) }
   | IF expr THEN expr ELSE expr { If($2, $4, $6) }
   | WHILE expr DO expr    { While($2, $4) }
+  | FUN LPAREN ID COLON typ RPAREN ARROW expr { Fun($3, $5, $8) }
   | seq                   { $1 }
 
+typ:
+  | typ_arrow             { $1 }
+
+typ_arrow:
+  | typ_base ARROW typ_arrow { TFun($1, $3) }
+  | typ_base              { $1 }
+
+typ_base:
+  | TINT                  { TInt }
+  | TBOOL                 { TBool }
+  | TUNIT                 { TUnit }
+  | TREF typ_base         { TRef $2 }
+  | LPAREN typ RPAREN     { $2 }
+
 bindings:
-  | ID EQ seq                    { [($1, $3)] }
-  | ID EQ seq LETAND bindings    { ($1, $3) :: $5 }
+  | ID EQ expr_no_seq              { [($1, $3)] }
+  | ID EQ expr_no_seq LETAND bindings { ($1, $3) :: $5 }
+
+expr_no_seq:
+  | FUN LPAREN ID COLON typ RPAREN ARROW expr_no_seq { Fun($3, $5, $8) }
+  | assign                { $1 }
 
 seq:
   | seq SEMICOLON assign  { Seq($1, $3) }
@@ -59,9 +79,13 @@ arith:
   | term                  { $1 }
 
 term:
-  | term TIMES  factor    { Mul ($1, $3) }
-  | term DIV    factor    { Div ($1, $3) }
-  | factor                {$1}
+  | term TIMES  app       { Mul ($1, $3) }
+  | term DIV    app       { Div ($1, $3) }
+  | app                   {$1}
+
+app:
+  | app LPAREN expr RPAREN { App($1, $3) }
+  | factor                 { $1 }
 
 factor:
   | TRUE                  { Bool true }

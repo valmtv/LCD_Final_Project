@@ -7,12 +7,14 @@ type result =
   | BoolV of bool
   | UnitV
   | RefV of result ref
+  | ClosureV of string * Ast.ast * result Env.env
 
 let rec unparse_result = function
   | IntV n -> string_of_int n
   | BoolV b -> string_of_bool b
   | UnitV -> "()"
   | RefV r -> "<ref " ^ unparse_result !r ^ ">"
+  | ClosureV _ -> "<function>"
 
 let int_int_binop f r1 r2 =
   match r1, r2 with
@@ -139,5 +141,18 @@ let rec eval_env env e =
        | _ -> failwith "Runtime error: printBool expects boolean")
 
   | PrintEndLine -> print_newline (); UnitV
+
+  | Fun (param, _param_type, body) ->
+      ClosureV (param, body, env)
+
+  | App (e1, e2) ->
+      let v1 = eval_env env e1 in
+      let v2 = eval_env env e2 in
+      (match v1 with
+       | ClosureV (param, body, closure_env) ->
+           let env' = Env.begin_scope closure_env in
+           let env'' = Env.bind env' param v2 in
+           eval_env env'' body
+       | _ -> failwith "Runtime error: applying non-function")
 
 let eval e = eval_env Env.empty_env e

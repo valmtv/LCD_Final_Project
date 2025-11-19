@@ -24,14 +24,25 @@ A compiler for the CALC expression language, featuring arithmetic, boolean opera
 - **Sequencing**: `e1; e2`
 - **I/O**: `printInt(e)`, `printBool(e)`, `printEndLine()`
 
+### First-Class Functions
+
+- **Lambda Functions**: `fun (param: type) -> expr`
+- **Function Application**: `f(arg)`
+- **Function Types**: `type1 -> type2`
+- **Closures**: Capture environment where functions are defined
+- **Higher-Order Functions**: Functions as arguments and return values
+
 ## Architecture
 
 - **Lexer** (`lexer.mll`): Tokenization
 - **Parser** (`parser.mly`): Syntax analysis with precedence rules
-- **Type Checker** (`typing.ml`): Static type checking with `int`, `bool`, `unit`, `ref T`
-- **Interpreter** (`eval.ml`): Direct evaluation with OCaml references
+- **AST** (`ast.ml`): Abstract syntax tree with type annotations
+- **Type Checker** (`typing.ml`): Static type checking with `int`, `bool`, `unit`, `ref T`, `T1 -> T2`
+- **Interpreter** (`eval.ml`): Direct evaluation with OCaml closures
 - **LLVM Compiler** (`llvm.ml`): Code generation targeting LLVM IR
-- **Runtime** (`mem_runtime.c`): C runtime for heap memory management
+- **Runtime** (`mem_runtime.c`, `closure_runtime.c`): C runtime for memory and closure management
+- **Environment** (`env.ml`): Scoped environment for variable bindings
+
 
 ## Building & Running
 
@@ -51,7 +62,17 @@ clang prog.ll mem_runtime.o -o prog
 ./prog
 ```
 
-## Example Program
+## Example Programs
+
+### Imperative Loop
+
+### Basic Function
+
+```ocaml
+let double = fun (x: int) -> x * 2 in
+printInt(double(21));
+printEndLine()
+```
 
 ```ocaml
 let x = new(0) in
