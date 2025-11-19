@@ -15,3 +15,7 @@ void assign_bool(ref r, bool v);
 void assign_ref(ref r, ref v);
 
 void free_ref(ref r);
+
+void print_int(int v);
+void print_bool(bool v);
+void print_endline();

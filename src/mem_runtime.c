@@ -42,3 +42,15 @@ void assign_ref(ref r, ref v) {
 void free_ref(ref r) {
     free(r);
 }
+
+void print_int(int v) {
+    printf("%d", v);
+}
+
+void print_bool(bool v) {
+    printf("%s", v ? "true" : "false");
+}
+
+void print_endline() {
+    printf("\n");
+}
