@@ -1,0 +1,7 @@
+let x = 5 in
+let y = 10 in
+if x < y && x > 0 then
+  printBool(true)
+else
+  printBool(false);
+printEndLine()

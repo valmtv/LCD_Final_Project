@@ -1,0 +1,8 @@
+let n = new(5) in
+let result = new(1) in
+while !n > 0 do (
+  result := !result * !n;
+  n := !n - 1
+);
+printInt(!result);
+printEndLine()

@@ -31,12 +31,60 @@ _build/
 # Mac files
 .DS_Store
 
-# test files
-test*
-tests*
-test.*
-prog*
-prog.*
-
 # object files
 *.o
+
+# Build directory
+build/
+
+# Compiled OCaml files
+*.cm[aiox]
+*.cmxa
+*.cmxs
+*.cmt
+*.cmi
+*.annot
+
+# Executables
+*.exe
+*.byte
+*.native
+*.bc
+*.run
+prog
+test_*
+!test_*.calc
+
+# Object files and libraries
+*.o
+*.a
+*.so
+*.dylib
+
+# LLVM IR files (optional - uncomment if you don't want to track these)
+# *.ll
+
+# Dune build directory
+_build/
+*.install
+
+# Editor files
+*~
+\#*#
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+*.sublime-*
+
+# Opam local switch
+_opam/
+
+# Mac files
+.DS_Store
+
+# Temporary files
+*.tmp
+*.temp

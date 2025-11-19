@@ -1,0 +1,4 @@
+let add = fun (x: int) -> fun (y: int) -> x + y in
+let add5 = add(5) in
+printInt(add5(10));
+printEndLine()

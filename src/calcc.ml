@@ -9,34 +9,29 @@ let parse_lexbuf lb =
       let col = pos.pos_cnum - pos.pos_bol in
       failwith (Printf.sprintf "Parse error at line %d, column %d" pos.pos_lnum col)
 
-let parse_string s =
-  Lexing.from_string s |> parse_lexbuf
+let parse_channel chan =
+  Lexing.from_channel chan |> parse_lexbuf
 
-(* The main loop *)
-let loop () =
-  (* First the prompt *)
-  print_string "> "; flush stdout;
-  match read_line () with
-  | s ->
-      (try
-          (* Parse the string and return an AST *)
-          let e = parse_string s in
-          let e' = Typing.typecheck e in
-          let t = Typing.type_of e' in
-          begin match t with
-           | None m -> failwith ("Typing error: " ^ m)
-           | _ -> (* Call the compiler and receive the instructions *)
-                  let result = Llvm.compile e' in
-                  (* Print the resulting LLVM program *)
-                  Llvm.print_llvm result t
-           end
-        with Failure msg ->
-          Printf.eprintf "Error: %s\n%!" msg);
-  | exception End_of_file -> print_endline "\nGoodbye!"
-
-(* You cannot have top level computations, so we use, let () = ... *)
 let () =
-  (* First the message *)
-  print_endline "Insert an expression. Ctrl+D to exit.";
-  (* Then the loop *)
-  loop ()
+  try
+    (* Read the entire input from stdin *)
+    let e = parse_channel stdin in
+    let e' = Typing.typecheck e in
+    let t = Typing.type_of e' in
+    begin match t with
+     | None m ->
+         Printf.eprintf "Typing error: %s\n" m;
+         exit 1
+     | _ ->
+         (* Call the compiler and receive the instructions *)
+         let result = Llvm.compile e' in
+         (* Print the resulting LLVM program to stdout *)
+         Llvm.print_llvm result t
+     end
+  with
+  | Failure msg ->
+      Printf.eprintf "Error: %s\n" msg;
+      exit 1
+  | Sys_error msg ->
+      Printf.eprintf "System error: %s\n" msg;
+      exit 1
