@@ -1,4 +1,4 @@
-# Makefile for CALC compiler with organized test structure
+# Makefile for CALC compiler
 
 .PHONY: build clean test-interp test-compile run examples help
 
@@ -85,17 +85,6 @@ test-all-compile: runtime
 			echo ""; \
 		fi \
 	done
-
-# Create example test files
-examples: setup
-	@echo "let double = fun (x: int) -> x * 2 in\nprintInt(double(21));\nprintEndLine()" > $(TEST_DIR)/test_double.calc
-	@echo "let f = fun (x: int) -> x + 1 in\nlet g = fun (x: int) -> x * 2 in\nprintInt(g(f(20)));\nprintEndLine()" > $(TEST_DIR)/test_compose.calc
-	@echo "let p = fun (x: int) -> x > 0 in\nprintBool(p(5));\nprintEndLine()" > $(TEST_DIR)/test_bool.calc
-	@echo "let inc = fun (x: int) -> x + 1 in\nlet x = 10 in\nprintInt(inc(x));\nprintEndLine()" > $(TEST_DIR)/test_simple.calc
-	@echo "Created example tests in $(TEST_DIR)/"
-
-# Quick test - run all example tests
-test: examples runtime test-all-compile
 
 # Show LLVM output for a test
 show-llvm:
