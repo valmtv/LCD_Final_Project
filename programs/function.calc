@@ -1,0 +1,4 @@
+let double = fun (x: int) -> x * 2 in
+let result = double(21) in
+printInt(result);
+printEndLine()

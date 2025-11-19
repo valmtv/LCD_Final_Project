@@ -1,0 +1,6 @@
+let x = new(0) in
+while !x < 5 do (
+  printInt(!x);
+  x := !x + 1
+);
+printEndLine()
