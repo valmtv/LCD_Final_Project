@@ -64,7 +64,6 @@ clang prog.ll mem_runtime.o -o prog
 
 ## Example Programs
 
-### Imperative Loop
 
 ### Basic Function
 
@@ -73,6 +72,8 @@ let double = fun (x: int) -> x * 2 in
 printInt(double(21));
 printEndLine()
 ```
+
+### Imperative Loop
 
 ```ocaml
 let x = new(0) in
