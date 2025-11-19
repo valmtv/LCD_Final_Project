@@ -27,6 +27,7 @@ type llvm =
   | PhiPtr of register * (result * label) list
   | Call of register * string * (Typing.calc_type * result) list
   | CallVoid of string * (Typing.calc_type * result) list
+  | Bitcast of register * string * result * string
 
 let count = ref 0
 let new_reg = fun () -> count := !count + 1; !count
@@ -37,7 +38,27 @@ let fun_count = ref 0
 let new_fun_id () = fun_count := !fun_count + 1; !fun_count
 
 (* Store generated function definitions *)
+type func_def = {
+  name: string;
+  param_type: calc_type;
+  return_type: calc_type;
+  body_result: result;
+  body_label: label;
+  body_block: llvm list;
+  body_blocks: (label * llvm list) list;
+}
+
 let function_defs = ref []
+
+(* Helper to determine apply_closure function name based on types *)
+let get_apply_closure_name param_t ret_t =
+  match param_t, ret_t with
+  | IntT, IntT -> "apply_closure_i32_i32"
+  | IntT, BoolT -> "apply_closure_i32_i1"
+  | BoolT, IntT -> "apply_closure_i1_i32"
+  | BoolT, BoolT -> "apply_closure_i1_i1"
+  | FunT _, FunT _ -> "apply_closure_closure_closure"
+  | _ -> "apply_closure_i32_i32" (* default fallback *)
 
 (* Code generation function *)
 
@@ -267,33 +288,60 @@ let rec compile_llvm env e label block =
     let fun_id = new_fun_id () in
     let fun_name = "lambda_" ^ string_of_int fun_id in
 
-    (* Compile the function body in a new environment with the parameter *)
-    let param_env = Env.begin_scope Env.empty_env in
-    let param_reg = Register (new_reg()) in
-    let body_env = Env.bind param_env param param_reg in
+    (* Create environment structure for closure - for now null since no free variables *)
+    (* In a full implementation, we'd need to capture free variables *)
 
-    let body_result, _body_env, body_label, body_block, body_blocks =
-      compile_llvm body_env body 0 [] in
-
-    (* Store the function definition *)
+    (* Compile the function body - it will be a separate LLVM function *)
+    (* For now, we create a simple closure with null environment *)
     let return_type = match t with
       | FunT (_, ret_t) -> ret_t
       | _ -> failwith "Internal error: Fun must have FunT type"
     in
 
-    function_defs := (fun_name, param_type, return_type, param_reg,
-                      body_result, body_label, body_block, body_blocks) :: !function_defs;
+    (* Store function definition to be generated later *)
+    let param_reg = Register 1 in (* %1 will be the parameter in the function *)
+    let body_env = Env.begin_scope Env.empty_env in
+    let body_env' = Env.bind body_env param param_reg in
 
-    (* Create a closure - for now just return function pointer *)
+    let body_result, _body_env_final, body_label, body_block, body_blocks =
+      compile_llvm body_env' body 0 [] in
+
+    function_defs := {
+      name = fun_name;
+      param_type = param_type;
+      return_type = return_type;
+      body_result = body_result;
+      body_label = body_label;
+      body_block = body_block;
+      body_blocks = body_blocks;
+    } :: !function_defs;
+
+    (* Create a closure - pass function pointer and null environment *)
     let ret = new_reg() in
-    let call_instr = Call (ret, "create_closure", [(FunT (param_type, return_type), Const fun_id)]) in
-    (Register ret, env, label, block@[call_instr], [])
+    let func_bitcast = new_reg() in
+    let call_instr = [
+      Bitcast (func_bitcast, "ptr", Const 0, "@" ^ fun_name);
+      Call (ret, "create_closure", [(FunT (param_type, return_type), Register func_bitcast); (FunT (param_type, return_type), Const 0)])
+    ] in
+    (Register ret, env, label, block@call_instr, [])
 
-  | App (_, e1, e2) ->
+  | App (ret_t, e1, e2) ->
     let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
     let r2, env2, l2, b2, bs2 = compile_llvm env1 e2 l1 b1 in
     let ret = new_reg() in
-    let call_instr = Call (ret, "apply_closure", [(FunT (UnitT, UnitT), r1); (UnitT, r2)]) in
+
+    (* Determine the correct apply_closure function based on types *)
+    let func_name = match type_of e1 with
+      | FunT (param_t, return_t) -> get_apply_closure_name param_t return_t
+      | _ -> "apply_closure_i32_i32" (* fallback *)
+    in
+
+    let param_t = match type_of e1 with
+      | FunT (pt, _) -> pt
+      | _ -> IntT
+    in
+
+    let call_instr = Call (ret, func_name, [(FunT (param_t, ret_t), r1); (param_t, r2)]) in
     (Register ret, env2, l2, b2@[call_instr], bs1@bs2)
 
 (* Unparse LLVM functions *)
@@ -312,8 +360,12 @@ let prologue =
    "declare void @print_int(i32)";
    "declare void @print_bool(i1)";
    "declare void @print_endline()";
-   "declare ptr @create_closure(i32)";
-   "declare i32 @apply_closure(ptr, i32)";
+   "declare ptr @create_closure(ptr, ptr)";
+   "declare i32 @apply_closure_i32_i32(ptr, i32)";
+   "declare i32 @apply_closure_i32_i1(ptr, i32)";
+   "declare i32 @apply_closure_i1_i32(ptr, i32)";
+   "declare i32 @apply_closure_i1_i1(ptr, i32)";
+   "declare ptr @apply_closure_closure_closure(ptr, ptr)";
    ""]
 
 let epilogue =
@@ -383,6 +435,8 @@ let unparse_llvm_i = function
   | CallVoid (fname, args) ->
       let arg_strs = List.map (fun (t, v) -> unparse_type t ^ " " ^ unparse_result v) args in
       "  call void @"^fname^"("^String.concat ", " arg_strs^")"
+  | Bitcast (r, target_type, _src, fname) ->
+      "  "^unparse_register r^" = bitcast ptr "^fname^" to "^target_type
 
 let print_block (label, instructions) =
     print_endline (unparse_label_declaration label);
@@ -390,18 +444,21 @@ let print_block (label, instructions) =
 
 let print_blocks bs = List.iter print_block bs
 
-let print_function_def (_fun_name, _param_type, _return_type, _param_reg,
-                        _body_result, _body_label, _body_block, _body_blocks) =
-  (* For now, we'll skip printing individual function definitions *)
-  (* In a full implementation, each lambda would be a separate LLVM function *)
-  ()
+let print_function_def func_def =
+  let param_type_str = unparse_type func_def.param_type in
+  let return_type_str = unparse_type func_def.return_type in
+
+  print_endline ("\ndefine " ^ return_type_str ^ " @" ^ func_def.name ^ "(ptr %env, " ^ param_type_str ^ " %1) {");
+  print_blocks (func_def.body_blocks @ [(func_def.body_label, func_def.body_block)]);
+  print_endline ("  ret " ^ return_type_str ^ " " ^ unparse_result func_def.body_result);
+  print_endline "}"
 
 let print_llvm (_ret,_env,label,instructions,blocks) _t =
     (* Print the prologue *)
     List.iter print_endline prologue;
 
     (* Print function definitions *)
-    List.iter print_function_def !function_defs;
+    List.iter print_function_def (List.rev !function_defs);
 
     (* Print main function *)
     print_endline "define i32 @main() #0 {";
@@ -412,4 +469,6 @@ let print_llvm (_ret,_env,label,instructions,blocks) _t =
 
 let compile e =
   function_defs := [];
+  count := 0;
+  fun_count := 0;
   compile_llvm Env.empty_env e 0 []
