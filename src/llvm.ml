@@ -59,7 +59,7 @@ let function_defs = ref []
 
 (* Helper to check if a type is represented as a pointer *)
 let is_ptr_type = function
-  | FunT _ | TupleT _ | RefT _ | RecordT _ -> true 
+  | FunT _ | TupleT _ | RefT _ | RecordT _ | ListT _ -> true 
   | _ -> false
 
 (* Helper to determine apply_closure function name based on types *)
@@ -476,6 +476,59 @@ let rec compile_llvm env e label block =
       
       (Register ret_reg, env1, l1, b1 @ [gep_instr; load_instr], bs1)
 
+    | List (ann, es) ->
+      (* Determine element type from the annotation (ListT t) *)
+      let elem_type = match ann with
+        | ListT t -> t
+        | _ -> failwith "Internal error: List expression must have ListT type" 
+      in
+      let len = List.length es in
+
+      (* Allocate Memory: Size = len * sizeof(elem_type) *)
+      let size_ptr_reg = new_reg () in
+      let size_reg = new_reg () in
+      let mem_reg = new_reg () in
+
+      let init_instrs = [
+         GetElementPtr(size_ptr_reg, elem_type, Const (-1), [Const len]);(* ptr = &null[len] *)
+         PtrToInt(size_reg, Register size_ptr_reg);
+         Call(mem_reg, "malloc", [(IntT, Register size_reg)])
+      ] in
+
+      (* Compile & Store elements *)
+      let (final_env, final_label, final_block, final_bs) = 
+        List.fold_left (fun (env, l, b, bs) (expr, idx) ->
+          let r_val, env', l', b', bs' = compile_llvm env expr l b in
+          
+          (* &arr[i] *)
+          let gep_reg = new_reg () in
+          let gep_instr = GetElementPtr(gep_reg, elem_type, Register mem_reg, [Const idx]) in
+          let store_instr = Store(elem_type, r_val, Register gep_reg) in
+          
+          (env', l', b' @ [gep_instr; store_instr], bs @ bs')
+        ) (env, label, block @ init_instrs, []) (List.mapi (fun i e -> (e,i)) es) 
+      in
+      
+      (Register mem_reg, final_env, final_label, final_block, final_bs)
+
+   | ListAccess (ann, e, idx_expr) ->
+      (* Compile the list expression (pointer) *)
+      let r_list, env1, l1, b1, bs1 = compile_llvm env e label block in
+      (* Compile the index expression (integer) *)
+      let r_idx, env2, l2, b2, bs2 = compile_llvm env1 idx_expr l1 b1 in
+      
+       let elem_type = ann in
+      
+      (* &list[idx] *)
+      let gep_reg = new_reg () in
+      (* For simple arrays, gep takes [idx] not [0; idx] *)
+      let gep_instr = GetElementPtr(gep_reg, elem_type, r_list, [r_idx]) in
+      
+      let ret_reg = new_reg () in
+      let load_instr = Load(ret_reg, elem_type, Register gep_reg) in
+      
+      (Register ret_reg, env2, l2, b2 @ [gep_instr; load_instr], bs1 @ bs2)
+
 (* Unparse LLVM functions *)
 
 let prologue =
@@ -525,11 +578,12 @@ let rec unparse_structural_type = function
   | FunT _ -> "ptr"
   | TupleT ts -> "{" ^ String.concat ", " (List.map unparse_type ts) ^ "}"
   | RecordT fs -> "{" ^ String.concat ", " (List.map (fun (_, t) -> unparse_type t) fs) ^ "}"
+  | ListT _ -> "ptr"
   | _ -> failwith "Unknown type"
 
 (* Main function for register types - Tuples are pointers in registers *)
 and unparse_type = function
-  | TupleT _ | RecordT _ -> "ptr"
+  | TupleT _ | RecordT _ | ListT _ -> "ptr"
   | t -> unparse_structural_type t
 
 let unparse_llvm_i = function
