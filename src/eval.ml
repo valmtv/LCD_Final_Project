@@ -10,6 +10,7 @@ type result =
   | ClosureV of string * Ast.ast * result Env.env
   | TupleV of result list
   | RecordV of (string * result) list
+  | ListV of result list
 
 let rec unparse_result = function
   | IntV n -> string_of_int n
@@ -19,6 +20,7 @@ let rec unparse_result = function
   | ClosureV _ -> "<function>"
   | TupleV vs -> "(" ^ String.concat ", " (List.map unparse_result vs) ^ ")"
   | RecordV fs -> "{" ^ String.concat "; " (List.map (fun (id,v) -> id ^ "=" ^ unparse_result v) fs) ^ "}"
+  | ListV vs -> "[" ^ String.concat ", " (List.map unparse_result vs) ^ "]"
 
 let int_int_binop f r1 r2 =
   match r1, r2 with
@@ -182,5 +184,21 @@ let rec eval_env env e =
             | Some v -> v
             | None -> failwith ("Runtime error: Field " ^ id ^ " not found"))
        | _ -> failwith "Runtime error: Accessing non-record")
+
+  | List (ann, es) ->
+      let vs = List.map (eval_env env) es in
+      ListV vs
+
+  | ListAccess (ann, e, i_expr) ->
+      let v_list = eval_env env e in
+      let v_index = eval_env env i_expr in
+      (match v_list, v_index with
+       | ListV vs, IntV i ->
+           if i >= 0 && i < List.length vs then
+             List.nth vs i
+           else
+             failwith ("Runtime error: List index out of bounds: " ^ string_of_int i)
+       | ListV _, _ -> failwith "Runtime error: List index must be an integer"
+       | _, _ -> failwith "Runtime error: Accessing non-list")
 
 let eval e = eval_env Env.empty_env e
