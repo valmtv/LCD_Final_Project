@@ -1,117 +1,129 @@
 # CALC Language Compiler
 
-A compiler for the CALC expression language, featuring arithmetic, boolean operations, variables, references, and imperative constructs. This project includes both an interpreter and a compiler targeting LLVM IR.
+A functional-imperative language compiler with first-class functions, mutable references, and data structures. Includes both an interpreter and an optimizing LLVM compiler.
 
-## Implemented Features
+## Features
 
-### Core Language (Labs 1-4)
+### Type System
 
-- **Literals**: Integers, booleans, unit value `()`
+- **Primitive Types**: `int`, `bool`, `unit`, `string`
+- **References**: `ref T` for mutable state
+- **Functions**: `T1 -> T2` with closures
+- **Tuples**: `(T1 * T2 * ...)` for heterogeneous collections
+- **Records**: `{field1: T1; field2: T2}` for named fields
+- **Lists**: `[T]` for homogeneous collections
+
+### Language Constructs
+
 - **Arithmetic**: `+`, `-`, `*`, `/`, unary `-`
 - **Comparisons**: `=`, `!=`, `<`, `<=`, `>`, `>=`
-- **Boolean Logic**: `&&`, `||`, `not` (with short-circuit evaluation)
-
-### Variables & Scope (Lab 5)
-
-- **Let Bindings**: `let x = e1 in e2`
-- **Multiple Bindings**: `let x = e1 and y = e2 in e3`
-- **Lexical Scoping**: Environment management
-
-### Imperative Features (Lab 7)
-
-- **References**: `new(e)`, `!e`, `e1 := e2`, `free(e)`
-- **Control Flow**: `if e1 then e2 else e3`, `while e1 do e2`
+- **Boolean Logic**: `&&`, `||`, `not` (short-circuit evaluation)
+- **Let Bindings**: `let x = e in body` and `let x = e1 and y = e2 in body`
+- **Functions**: `fun (param: type) -> expr` with lexical scoping
+- **Control Flow**: `if/then/else`, `while/do`
+- **References**: `new(e)`, `!e`, `:=`, `free(e)`
 - **Sequencing**: `e1; e2`
-- **I/O**: `printInt(e)`, `printBool(e)`, `printEndLine()`
+- **Data Access**: Tuple indexing (`.0`, `.1`), record fields (`.field`), list indexing (`[i]`)
+- **Pairs**: `fst(e)` and `snd(e)` for 2-tuples
+- **I/O**: `printInt`, `printBool`, `printString`, `intToString`, `printEndLine`
 
-### First-Class Functions
+### Compiler Features
 
-- **Lambda Functions**: `fun (param: type) -> expr`
-- **Function Application**: `f(arg)`
-- **Function Types**: `type1 -> type2`
-- **Closures**: Capture environment where functions are defined
-- **Higher-Order Functions**: Functions as arguments and return values
+- **Type Inference**: Static type checking with error messages
+- **Optimization**: Constant folding and propagation (enable with `OPT=1` flag)
+- **LLVM Backend**: Generates optimized native code
+- **Runtime**: Memory management and closure implementation
 
 ## Architecture
 
-- **Lexer** (`lexer.mll`): Tokenization
-- **Parser** (`parser.mly`): Syntax analysis with precedence rules
-- **AST** (`ast.ml`): Abstract syntax tree with type annotations
-- **Type Checker** (`typing.ml`): Static type checking with `int`, `bool`, `unit`, `ref T`, `T1 -> T2`
-- **Interpreter** (`eval.ml`): Direct evaluation with OCaml closures
-- **LLVM Compiler** (`llvm.ml`): Code generation targeting LLVM IR
-- **Runtime** (`mem_runtime.c`, `closure_runtime.c`): C runtime for memory and closure management
-- **Environment** (`env.ml`): Scoped environment for variable bindings
+- **Lexer/Parser** (`lexer.mll`, `parser.mly`): Tokenization and parsing
+- **Type Checker** (`typing.ml`): Static type analysis
+- **Optimizer** (`optimizer.ml`): Constant folding and propagation
+- **Interpreter** (`eval.ml`): Direct AST evaluation
+- **LLVM Compiler** (`llvm.ml`): Code generation
+- **Runtime** (`mem_runtime.c`, `closure_runtime.c`): Memory and closure support
 
-## Building Running & Testing in the programs/ folder
+## Building and Running
 
 ```bash
-# Build
+# Build project
 make build
 
-# Run interpreter (interactive REPL)
+# Interactive REPL
 make repl
 
 # Compile and run a program
 make run FILE=program.calc
 
-## Running Tests and Optimizations
-You can run individual programs or the full test suite. By default, optimizations are **disabled**.
+# Compile with optimizations
+make run FILE=program.calc OPT=1
 
-# Run standard test suite
+# Run all programs
 make test
 
-# Run test suite with optimizations enabled
+# Run programs with optimizations
 make test OPT=1
 
-# Clean
+# Clean build artifacts
 make clean
 ```
 
-## Usage
+Place `.calc` files in `programs/` directory. Build artifacts go to `build/`.
 
-Put your `.calc` files in `programs/` directory, then:
+## Examples
 
-```bash
-make run FILE=myprogram.calc
-```
-
-All build artifacts go to `build/` directory.
-
-## Example Programs
-
-### Basic Function
+### Closures and Higher-Order Functions
 
 ```ocaml
-let double = fun (x: int) -> x * 2 in
-printInt(double(21));
-printEndLine()
+let make_adder = fun (x: int) ->
+  fun (y: int) -> x + y in
+let add10 = make_adder(10) in
+printInt(add10(5))
 ```
 
-### Imperative Loop
+### Tuples and Records
 
 ```ocaml
-let x = new(0) in
-while !x < 5 do (
-  printInt(!x);
-  x := !x + 1
+let point = {x = 10; y = 20} in
+let pair = (point.x, point.y) in
+printInt(pair.0 + pair.1)
+```
+
+### Pairs with fst/snd
+
+```ocaml
+let p = (42, 100) in
+printInt(fst(p));
+printInt(snd(p))
+```
+
+### Lists and Iteration
+
+```ocaml
+let numbers = [1, 2, 3, 4, 5] in
+let i = new(0) in
+while !i < 5 do (
+  printInt(numbers[!i]);
+  i := !i + 1
+)
+```
+
+### Mutable State
+
+```ocaml
+let counter = new(0) in
+let n = new(5) in
+while !n > 0 do (
+  counter := !counter + !n;
+  n := !n - 1
 );
-printEndLine()
+printInt(!counter)
 ```
-
-## Thank you
-
-**Authors**:
-
-- Wiktor Szydłowski 75135
-- Valerii Matviiv 75176 
 
 ---
+
+**Authors**: Wiktor Szydłowski (75135), Valerii Matviiv (75176)
 
 > *"There are only two kinds of languages: the ones people complain about and the ones nobody uses."*
 >
 > **Bjarne Stroustrup**
-
----
-
-[![Review Assignment Due Date](https://classroom.github.com/assets/deadline-readme-button-22041afd0340ce965d47ae6ef1cefeee28c7c493a6346c4f15d667ab976d596c.svg)](https://classroom.github.com/a/nn2FV4D7)
