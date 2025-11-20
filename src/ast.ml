@@ -5,6 +5,7 @@ type type_annotation =
   | TInt
   | TBool
   | TUnit
+  | TString
   | TRef of type_annotation
   | TFun of type_annotation * type_annotation
   | TTuple of type_annotation list
@@ -15,6 +16,7 @@ type type_annotation =
 type ast =
     Num of int
   | Bool of bool
+  | Str of string
   | Unit
 
   | Add of ast * ast
@@ -48,6 +50,7 @@ type ast =
 
   | PrintInt of ast
   | PrintBool of ast
+  | PrintString of ast
   | PrintEndLine
 
   | Fun of string * type_annotation * ast
@@ -63,6 +66,7 @@ type ast =
 let rec unparse_type_annotation = function
   | TInt -> "int"
   | TBool -> "bool"
+  | TString -> "string"
   | TUnit -> "unit"
   | TRef t -> "ref " ^ unparse_type_annotation t
   | TFun (t1, t2) -> "(" ^ unparse_type_annotation t1 ^ " -> " ^ unparse_type_annotation t2 ^ ")"
@@ -77,6 +81,7 @@ let rec unparse_ast p e =
   match e with
   | Num x -> string_of_int x
   | Bool b -> string_of_bool b
+  | Str s -> "\"" ^ s ^ "\""
   | Unit -> "()"
   | Add (e1,e2) -> paren p 10 (unparse_ast 10 e1 ^ " + " ^ unparse_ast 10 e2)
   | Sub (e1,e2) -> paren p 10 (unparse_ast 10 e1 ^ " - " ^ unparse_ast 11 e2)
@@ -106,6 +111,7 @@ let rec unparse_ast p e =
   | Seq (e1, e2) -> paren p 1 (unparse_ast 1 e1 ^ "; " ^ unparse_ast 1 e2)
   | PrintInt e -> "printInt(" ^ unparse_ast 0 e ^ ")"
   | PrintBool e -> "printBool(" ^ unparse_ast 0 e ^ ")"
+  | PrintString e -> "printString(" ^ unparse_ast 0 e ^ ")"
   | PrintEndLine -> "printEndLine()"
   | Fun (param, typ, body) -> paren p 1 ("fun (" ^ param ^ ": " ^ unparse_type_annotation typ ^ ") -> " ^ unparse_ast 1 body)
   | App (e1, e2) -> paren p 40 (unparse_ast 40 e1 ^ "(" ^ unparse_ast 0 e2 ^ ")")

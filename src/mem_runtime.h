@@ -18,4 +18,5 @@ void free_ref(ref r);
 
 void print_int(int v);
 void print_bool(int v);
+void print_string(char* s);
 void print_endline();

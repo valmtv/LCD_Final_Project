@@ -3,6 +3,7 @@
 type calc_type =
   | IntT
   | BoolT
+  | StringT
   | UnitT
   | RefT of calc_type
   | FunT of calc_type * calc_type
@@ -16,6 +17,7 @@ type ann = calc_type
 type ast =
     Num of int
   | Bool of bool
+  | Str of string
   | Unit
 
   | Add of ann * ast * ast
@@ -49,6 +51,7 @@ type ast =
 
   | PrintInt of ann * ast
   | PrintBool of ann * ast
+  | PrintString of ann * ast
   | PrintEndLine of ann
 
   | Fun of ann * string * calc_type * ast
@@ -64,6 +67,7 @@ type ast =
 let type_of = function
   | Num _ -> IntT
   | Bool _ -> BoolT
+  | Str _ -> StringT
   | Unit -> UnitT
 
   | Add (ann,_,_) -> ann
@@ -97,6 +101,7 @@ let type_of = function
 
   | PrintInt (ann,_) -> ann
   | PrintBool (ann,_) -> ann
+  | PrintString (ann,_) -> ann
   | PrintEndLine ann -> ann
 
   | Fun (ann,_,_,_) -> ann
@@ -132,6 +137,7 @@ let rec unparse_type = function
   | IntT -> "int"
   | BoolT -> "boolean"
   | UnitT -> "unit"
+  | StringT -> "string"
   | RefT t -> "ref " ^ unparse_type t
   | FunT (t1, t2) -> "(" ^ unparse_type t1 ^ " -> " ^ unparse_type t2 ^ ")"
   | TupleT ts -> "(" ^ String.concat " * " (List.map unparse_type ts) ^ ")"
@@ -143,6 +149,7 @@ let rec unparse_type = function
 let rec type_annotation_to_calc_type = function
   | Ast.TInt -> IntT
   | Ast.TBool -> BoolT
+  | Ast.TString -> StringT
   | Ast.TUnit -> UnitT
   | Ast.TRef t -> RefT (type_annotation_to_calc_type t)
   | Ast.TFun (t1, t2) -> FunT (type_annotation_to_calc_type t1, type_annotation_to_calc_type t2)
@@ -186,6 +193,7 @@ let rec typecheck_env env e =
   match e with
   | Ast.Num n -> Num n
   | Ast.Bool b -> Bool b
+  | Ast.Str s -> Str s
   | Ast.Unit -> Unit
 
   | Ast.Id x ->
@@ -282,6 +290,12 @@ let rec typecheck_env env e =
       (match type_of e1' with
        | BoolT -> PrintBool (UnitT, e1')
        | _ -> PrintBool (None "Expecting boolean", e1'))
+
+  | Ast.PrintString e1 ->
+      let e1' = typecheck_env env e1 in
+      (match type_of e1' with
+       | StringT -> PrintString (UnitT, e1')
+       | _ -> PrintString (None "Expecting string", e1'))
 
   | Ast.PrintEndLine -> PrintEndLine UnitT
 

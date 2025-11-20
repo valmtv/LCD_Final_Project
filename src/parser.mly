@@ -12,6 +12,8 @@ open Ast
 %token SEMICOLON COMMA COLON ARROW
 %token FUN TINT TBOOL TUNIT TREF DOT
 %token LBRACE RBRACE LBRACKET RBRACKET
+%token <string> STRING 
+%token TSTRING PRINTSTRING
 
 %start main
 %type <Ast.ast> main
@@ -53,6 +55,7 @@ typ_record_fields:
 typ_base:
   | TINT                  { TInt }
   | TBOOL                 { TBool }
+  | TSTRING               { TString }
   | TUNIT                 { TUnit }
   | TREF typ_base         { TRef $2 }
   | LPAREN typ RPAREN     { $2 }
@@ -116,6 +119,7 @@ factor:
   | TRUE                  { Bool true }
   | FALSE                 { Bool false }
   | INT                   { Num $1 }
+  | STRING                { Str $1 }
   | ID                    { Id $1 }
   | LPAREN expr_list RPAREN { 
       match $2 with 
@@ -132,6 +136,7 @@ factor:
   | FREE LPAREN expr RPAREN { Free $3 }
   | PRINTINT LPAREN expr RPAREN { PrintInt $3 }
   | PRINTBOOL LPAREN expr RPAREN { PrintBool $3 }
+  | PRINTSTRING LPAREN expr RPAREN { PrintString $3 }
   | PRINTENDLINE LPAREN RPAREN { PrintEndLine }
 
 expr_list:

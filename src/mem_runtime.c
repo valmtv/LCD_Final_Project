@@ -52,6 +52,10 @@ void print_bool(int v) {
     printf("%s", v ? "true" : "false");
 }
 
+void print_string(char* s) {
+    printf("%s", s);
+}
+
 void print_endline() {
     printf("\n");
 }

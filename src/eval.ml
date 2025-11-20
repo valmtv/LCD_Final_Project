@@ -5,6 +5,7 @@ open Ast
 type result =
   | IntV of int
   | BoolV of bool
+  | StringV of string
   | UnitV
   | RefV of result ref
   | ClosureV of string * Ast.ast * result Env.env
@@ -15,6 +16,7 @@ type result =
 let rec unparse_result = function
   | IntV n -> string_of_int n
   | BoolV b -> string_of_bool b
+  | StringV s -> "\"" ^ s ^ "\""
   | UnitV -> "()"
   | RefV r -> "<ref " ^ unparse_result !r ^ ">"
   | ClosureV _ -> "<function>"
@@ -52,6 +54,7 @@ let rec eval_env env e =
   match e with
   | Num n -> IntV n
   | Bool b -> BoolV b
+  | Str s -> StringV s
   | Unit -> UnitV
 
   | Id x ->
@@ -144,6 +147,11 @@ let rec eval_env env e =
       (match eval_env env e1 with
        | BoolV b -> print_string (string_of_bool b); UnitV
        | _ -> failwith "Runtime error: printBool expects boolean")
+
+  | PrintString e1 ->
+      (match eval_env env e1 with
+       | StringV s -> print_string s; UnitV
+       | _ -> failwith "Runtime error: printString expects string")
 
   | PrintEndLine -> print_newline (); UnitV
 

@@ -36,6 +36,15 @@ type llvm =
 
 let reg_count = ref 0
 let label_count = ref 0
+let string_constants = ref []
+
+(* Helper to add a string constant and get its unique name *)
+let add_string_constant s =
+  let id = !reg_count in 
+  reg_count := !reg_count + 1;
+  let name = ".str." ^ string_of_int id in
+  string_constants := (name, s) :: !string_constants;
+  name
 
 let new_reg = fun () -> reg_count := !reg_count + 1; !reg_count
 let new_label = fun () -> label_count := !label_count + 1; "L" ^ string_of_int !label_count
@@ -280,6 +289,18 @@ let rec compile_llvm env e label block =
     let _r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
     let r2, env2, l2, b2, bs2 = compile_llvm env1 e2 l1 b1 in
     (r2, env2, l2, b2, bs1@bs2)
+
+  | Str s ->
+      let str_label = add_string_constant s in
+      let ret = new_reg() in
+      (* Use Bitcast to get a pointer to the global string constant *)
+      let cast_instr = Bitcast(ret, "ptr", Const 0, "@" ^ str_label) in
+      (Register ret, env, label, block@[cast_instr], [])
+
+  | PrintString (_, e1) ->
+      let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
+      let call_instr = CallVoid ("print_string", [(StringT, r1)]) in
+      (Const 0, env1, l1, b1@[call_instr], bs1)
 
   (* Print operations *)
   | PrintInt (_, e1) ->
@@ -533,6 +554,7 @@ let rec compile_llvm env e label block =
 
 let prologue =
   [ "declare ptr @malloc(i32)";
+  "declare void @print_string(ptr)";
    "declare ptr @new_ref_int(i32)";
    "declare ptr @new_ref_bool(i1)";
    "declare ptr @new_ref_ref(ptr)";
@@ -574,6 +596,7 @@ let rec unparse_structural_type = function
   | IntT -> "i32"
   | BoolT -> "i1"
   | UnitT -> "i32"
+  | StringT -> "ptr"
   | RefT _ -> "ptr"
   | FunT _ -> "ptr"
   | TupleT ts -> "{" ^ String.concat ", " (List.map unparse_type ts) ^ "}"
@@ -682,6 +705,13 @@ let print_function_def func_def =
   print_endline "}"
 
 let print_llvm (_ret,_env,label,instructions,blocks) _t =
+    (* Print global string constants *)
+    List.iter (fun (name, s) ->
+      let len = String.length s + 1 in
+      (* If strings have special chars they might need escaping *)
+      Printf.printf "@%s = private unnamed_addr constant [%d x i8] c\"%s\\00\", align 1\n" name len s
+    ) (List.rev !string_constants);
+
     (* Print the prologue *)
     List.iter print_endline prologue;
 
@@ -697,6 +727,7 @@ let print_llvm (_ret,_env,label,instructions,blocks) _t =
 
 let compile e =
   function_defs := [];
+  string_constants := [];
   reg_count := -1;
   label_count := 0;
   fun_count := 0;
