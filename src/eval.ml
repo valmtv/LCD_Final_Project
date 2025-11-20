@@ -21,7 +21,6 @@ let rec unparse_result = function
   | TupleV vs -> "(" ^ String.concat ", " (List.map unparse_result vs) ^ ")"
   | RecordV fs -> "{" ^ String.concat "; " (List.map (fun (id,v) -> id ^ "=" ^ unparse_result v) fs) ^ "}"
   | ListV vs -> "[" ^ String.concat ", " (List.map unparse_result vs) ^ "]"
-
 let int_int_binop f r1 r2 =
   match r1, r2 with
   | IntV n1, IntV n2 -> IntV (f n1 n2)
@@ -185,11 +184,11 @@ let rec eval_env env e =
             | None -> failwith ("Runtime error: Field " ^ id ^ " not found"))
        | _ -> failwith "Runtime error: Accessing non-record")
 
-  | List (ann, es) ->
+  | List es ->
       let vs = List.map (eval_env env) es in
       ListV vs
 
-  | ListAccess (ann, e, i_expr) ->
+  | ListAccess (e, i_expr) ->
       let v_list = eval_env env e in
       let v_index = eval_env env i_expr in
       (match v_list, v_index with

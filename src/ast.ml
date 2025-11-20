@@ -9,6 +9,7 @@ type type_annotation =
   | TFun of type_annotation * type_annotation
   | TTuple of type_annotation list
   | TRecord of (string * type_annotation) list
+  | TList of type_annotation
 
 (* The abstract syntax tree (AST) type for the calc language *)
 type ast =
