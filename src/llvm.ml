@@ -25,9 +25,14 @@ type llvm =
   | PhiI1 of register * (result * label) list
   | PhiI32 of register * (result * label) list
   | PhiPtr of register * (result * label) list
+  | GetElementPtr of register * Typing.calc_type * result * result list
+  | Load of register * Typing.calc_type * result
+  | Store of Typing.calc_type * result * result
+  | PtrToInt of register * result
   | Call of register * string * (Typing.calc_type * result) list
   | CallVoid of string * (Typing.calc_type * result) list
   | Bitcast of register * string * result * string
+  | ZExt of register * Typing.calc_type * result * Typing.calc_type
 
 let reg_count = ref 0
 let label_count = ref 0
@@ -52,6 +57,11 @@ type func_def = {
 
 let function_defs = ref []
 
+(* Helper to check if a type is represented as a pointer *)
+let is_ptr_type = function
+  | FunT _ | TupleT _ | RefT _ -> true
+  | _ -> false
+
 (* Helper to determine apply_closure function name based on types *)
 let get_apply_closure_name param_t ret_t =
   match param_t, ret_t with
@@ -59,7 +69,8 @@ let get_apply_closure_name param_t ret_t =
   | IntT, BoolT -> "apply_closure_i32_i1"
   | BoolT, IntT -> "apply_closure_i1_i32"
   | BoolT, BoolT -> "apply_closure_i1_i1"
-  | FunT _, FunT _ -> "apply_closure_closure_closure"
+  (* Use generic pointer implementation for any pointer types (Functions, Tuples, Refs) *)
+  | t1, t2 when is_ptr_type t1 && is_ptr_type t2 -> "apply_closure_closure_closure"
   | _ -> "apply_closure_i32_i32" (* default fallback *)
 
 (* Code generation function *)
@@ -278,9 +289,14 @@ let rec compile_llvm env e label block =
 
   | PrintBool (_, e1) ->
     let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
-    let call_instr = CallVoid ("print_bool", [(IntT, r1)]) in  (* Use IntT since bools are i32 *)
-    (Const 0, env1, l1, b1@[call_instr], bs1)
-
+    
+    (* Zero-extend the i1 boolean to an i32 integer *)
+    let ret_reg = new_reg () in
+    let ext_instr = ZExt(ret_reg, BoolT, r1, IntT) in
+    
+    (* Pass the extended register (ret_reg) instead of r1 *)
+    let call_instr = CallVoid ("print_bool", [(IntT, Register ret_reg)]) in
+    (Const 0, env1, l1, b1@[ext_instr; call_instr], bs1)
   | PrintEndLine _ ->
     let call_instr = CallVoid ("print_endline", []) in
     (Const 0, env, label, block@[call_instr], [])
@@ -356,10 +372,64 @@ let rec compile_llvm env e label block =
     let call_instr = Call (ret, func_name, [(FunT (param_t, ret_t), r1); (param_t, r2)]) in
     (Register ret, env2, l2, b2@[call_instr], bs1@bs2)
 
+
+  | Tuple (ann, es) ->
+     let struct_type = type_of (Tuple(ann, es)) in 
+     
+     (* Calculate size & Malloc - allocate these registers FIRST *)
+     let size_ptr_reg = new_reg () in
+     let size_reg = new_reg () in
+     let mem_reg = new_reg () in
+     
+     (* Define instructions for size & malloc *)
+     (* Use Const (-1) for null to calculate size *)
+     let init_instrs = [
+        GetElementPtr(size_ptr_reg, struct_type, Const (-1), [Const 1]);
+        PtrToInt(size_reg, Register size_ptr_reg);
+        Call(mem_reg, "malloc", [(IntT, Register size_reg)])
+     ] in
+     
+     (* Compile & Store elements *)
+     (* Start the fold with 'block @ init_instrs'.
+         ensures registers were allocated:
+        1. Malloc (regs %2, %3, %4)
+        2. Element 1 (regs %5...)
+        3. Element 2 (regs %6...) 
+     *)
+     let (final_env, final_label, final_block, final_bs) = 
+       List.fold_left (fun (env, l, b, bs) (expr, idx) ->
+         (* Compile expr. 'b' already contains history + init_instrs + previous exprs *)
+         let r_val, env', l', b', bs' = compile_llvm env expr l b in
+         
+         (* gep/store registers *)
+         let gep_reg = new_reg () in
+         let gep_instr = GetElementPtr(gep_reg, struct_type, Register mem_reg, [Const 0; Const idx]) in
+         let store_instr = Store(Typing.type_of expr, r_val, Register gep_reg) in
+         
+         (* Add to block *)
+         (env', l', b' @ [gep_instr; store_instr], bs @ bs')
+       ) (env, label, block @ init_instrs, []) (List.mapi (fun i e -> (e,i)) es) 
+     in
+     
+     (Register mem_reg, final_env, final_label, final_block, final_bs)
+
+  | TupleAccess (ann, e, idx) ->
+      let r_tuple, env1, l1, b1, bs1 = compile_llvm env e label block in
+      let tuple_type = Typing.type_of e in (* This is the TupleT {...} *)
+      
+      let gep_reg = new_reg () in
+      let gep_instr = GetElementPtr(gep_reg, tuple_type, r_tuple, [Const 0; Const (idx - 1)]) in
+      
+      let ret_reg = new_reg () in
+      let load_instr = Load(ret_reg, ann, Register gep_reg) in
+      
+      (Register ret_reg, env1, l1, b1 @ [gep_instr; load_instr], bs1)
+
 (* Unparse LLVM functions *)
 
 let prologue =
-  ["declare ptr @new_ref_int(i32)";
+  [ "declare ptr @malloc(i32)";
+   "declare ptr @new_ref_int(i32)";
    "declare ptr @new_ref_bool(i1)";
    "declare ptr @new_ref_ref(ptr)";
    "declare i32 @deref_int(ptr)";
@@ -395,13 +465,20 @@ let unparse_result = function
   | Const x -> string_of_int x
   | Register x -> unparse_register x
 
-let unparse_type = function
+(* Helper to generate the structural type string (e.g. "{i32, i32}") *)
+let rec unparse_structural_type = function
   | IntT -> "i32"
   | BoolT -> "i1"
   | UnitT -> "i32"
   | RefT _ -> "ptr"
   | FunT _ -> "ptr"
+  | TupleT ts -> "{" ^ String.concat ", " (List.map unparse_type ts) ^ "}"
   | _ -> failwith "Unknown type"
+
+(* Main function for register types - Tuples are pointers in registers *)
+and unparse_type = function
+  | TupleT _ -> "ptr"
+  | t -> unparse_structural_type t
 
 let unparse_llvm_i = function
   | Addi32 (r,l1,l2) ->
@@ -470,6 +547,18 @@ let unparse_llvm_i = function
       "  call void @"^fname^"("^String.concat ", " arg_strs^")"
   | Bitcast (r, target_type, _src, fname) ->
       "  "^unparse_register r^" = bitcast ptr "^fname^" to "^target_type
+  | GetElementPtr (r, t, base, indices) ->
+      let type_str = unparse_structural_type t in
+      let indices_str = String.concat ", " (List.map (fun res -> "i32 " ^ unparse_result res) indices) in
+      "  " ^ unparse_register r ^ " = getelementptr " ^ type_str ^ ", ptr " ^ unparse_result base ^ ", " ^ indices_str
+  | Load (r, t, ptr) ->
+      "  " ^ unparse_register r ^ " = load " ^ unparse_type t ^ ", ptr " ^ unparse_result ptr
+  | Store (t, v, ptr) ->
+      "  store " ^ unparse_type t ^ " " ^ unparse_result v ^ ", ptr " ^ unparse_result ptr
+  | PtrToInt (r, v) ->
+      "  " ^ unparse_register r ^ " = ptrtoint ptr " ^ unparse_result v ^ " to i32"
+  | ZExt (r, src_t, v, dst_t) ->
+      "  " ^ unparse_register r ^ " = zext " ^ unparse_type src_t ^ " " ^ unparse_result v ^ " to " ^ unparse_type dst_t
 
 let print_block (label, instructions) =
     print_endline (unparse_label_declaration label);

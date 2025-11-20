@@ -17,7 +17,7 @@ open Ast
 
 %%
 main:
-  expr EOF                { $1 }
+  | expr EOF                { $1 }
 
 expr:
   | LET bindings IN expr  { Let($2, $4) }
@@ -34,8 +34,16 @@ typ:
   | typ_arrow             { $1 }
 
 typ_arrow:
-  | typ_base ARROW typ_arrow { TFun($1, $3) }
-  | typ_base              { $1 }
+  | typ_tuple ARROW typ_arrow { TFun($1, $3) }
+  | typ_tuple                 { $1 }
+
+typ_tuple:
+  | typ_base TIMES typ_tuple_list { TTuple($1 :: $3) }
+  | typ_base                      { $1 }
+
+typ_tuple_list:
+  | typ_base TIMES typ_tuple_list { $1 :: $3 }
+  | typ_base                      { [$1] }
 
 typ_base:
   | TINT                  { TInt }
@@ -53,7 +61,9 @@ expr_no_seq:
   | assign                { $1 }
 
 seq:
-  | seq SEMICOLON assign  { Seq($1, $3) }
+  | assign SEMICOLON seq  { Seq($1, $3) }
+  | assign SEMICOLON assign { Seq($1, $3) }
+  | seq SEMICOLON assign { Seq($1, $3) }
   | assign                { $1 }
 
 assign:
@@ -98,7 +108,6 @@ factor:
   | FALSE                 { Bool false }
   | INT                   { Num $1 }
   | ID                    { Id $1 }
-  | LPAREN RPAREN         { Unit }
   | LPAREN expr_list RPAREN { 
       match $2 with 
       | [] -> Unit 
@@ -118,4 +127,3 @@ expr_list:
   | expr COMMA expr_list { $1 :: $3 }
   | expr                 { [$1] }
   | /* empty */          { [] }
-;
