@@ -46,6 +46,8 @@ rule read = parse
   | '-'                      { MINUS }
   | '*'                      { TIMES }
   | '/'                      { DIV }
+  | "fst"                    { FST }
+  | "snd"                    { SND }
   | '('                      { LPAREN }
   | ')'                      { RPAREN }
   | '{'                      { LBRACE }

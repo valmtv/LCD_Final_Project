@@ -60,6 +60,8 @@ type ast =
 
   | Tuple of ann * ast list
   | TupleAccess of ann * ast * int
+  | Fst of ann * ast
+  | Snd of ann * ast
   | Record of ann * (string * ast) list
   | RecordAccess of ann * ast * string
   | List of ann * ast list
@@ -111,6 +113,8 @@ let type_of = function
 
   | Tuple (ann, _) -> ann
   | TupleAccess (ann, _, _) -> ann
+  | Fst (ann, _) -> ann
+  | Snd (ann, _) -> ann
   | Record (ann, _) -> ann
   | RecordAccess (ann, _, _) -> ann
   | List (ann, _) -> ann
@@ -342,6 +346,20 @@ let rec typecheck_env env e =
            else
              TupleAccess (None ("Tuple index out of bounds: " ^ string_of_int i), typed_e, i)
        | _ -> TupleAccess (None "Expected tuple type for access", typed_e, i))
+
+  | Ast.Fst e ->
+      let e' = typecheck_env env e in
+      (match type_of e' with
+       | TupleT [t1; _] -> Fst (t1, e') (* Only allow 2-tuples *)
+       | TupleT _ -> Fst (None "fst expects a pair (2-tuple)", e')
+       | _ -> Fst (None "fst expects a tuple type", e'))
+
+  | Ast.Snd e ->
+      let e' = typecheck_env env e in
+      (match type_of e' with
+       | TupleT [_; t2] -> Snd (t2, e') (* Only allow 2-tuples *)
+       | TupleT _ -> Snd (None "snd expects a pair (2-tuple)", e')
+       | _ -> Snd (None "snd expects a tuple type", e'))
     
   | Ast.Record fields ->
       let typed_fields = List.map (fun (id, e) -> (id, typecheck_env env e)) fields in
