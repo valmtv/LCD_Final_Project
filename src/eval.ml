@@ -9,6 +9,7 @@ type result =
   | RefV of result ref
   | ClosureV of string * Ast.ast * result Env.env
   | TupleV of result list
+  | RecordV of (string * result) list
 
 let rec unparse_result = function
   | IntV n -> string_of_int n
@@ -17,6 +18,7 @@ let rec unparse_result = function
   | RefV r -> "<ref " ^ unparse_result !r ^ ">"
   | ClosureV _ -> "<function>"
   | TupleV vs -> "(" ^ String.concat ", " (List.map unparse_result vs) ^ ")"
+  | RecordV fs -> "{" ^ String.concat "; " (List.map (fun (id,v) -> id ^ "=" ^ unparse_result v) fs) ^ "}"
 
 let int_int_binop f r1 r2 =
   match r1, r2 with
@@ -168,5 +170,17 @@ let rec eval_env env e =
            else
              failwith "Runtime error: Tuple index out of bounds"
        | _ -> failwith "Runtime error: Accessing non-tuple")
+
+  | Record fields ->
+      let v_fields = List.map (fun (id, e) -> (id, eval_env env e)) fields in
+      RecordV v_fields
+
+  | RecordAccess (e, id) ->
+      (match eval_env env e with
+       | RecordV fields ->
+           (match List.assoc_opt id fields with
+            | Some v -> v
+            | None -> failwith ("Runtime error: Field " ^ id ^ " not found"))
+       | _ -> failwith "Runtime error: Accessing non-record")
 
 let eval e = eval_env Env.empty_env e
