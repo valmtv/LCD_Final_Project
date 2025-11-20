@@ -10,7 +10,7 @@ open Ast
 %token NEW FREE DEREF ASSIGN
 %token PRINTINT PRINTBOOL PRINTENDLINE
 %token SEMICOLON COMMA COLON ARROW
-%token FUN TINT TBOOL TUNIT TREF
+%token FUN TINT TBOOL TUNIT TREF DOT
 
 %start main
 %type <Ast.ast> main
@@ -90,6 +90,7 @@ term:
 
 app:
   | app LPAREN expr RPAREN { App($1, $3) }
+  | app DOT INT            { TupleAccess($1, $3) }
   | factor                 { $1 }
 
 factor:
@@ -98,7 +99,12 @@ factor:
   | INT                   { Num $1 }
   | ID                    { Id $1 }
   | LPAREN RPAREN         { Unit }
-  | LPAREN expr RPAREN    { $2 }
+  | LPAREN expr_list RPAREN { 
+      match $2 with 
+      | [] -> Unit 
+      | [e] -> e 
+      | es -> Tuple(es) 
+    }  
   | MINUS factor          { Neg $2 }
   | NOT factor            { Not $2 }
   | DEREF factor          { Deref $2 }
@@ -107,4 +113,9 @@ factor:
   | PRINTINT LPAREN expr RPAREN { PrintInt $3 }
   | PRINTBOOL LPAREN expr RPAREN { PrintBool $3 }
   | PRINTENDLINE LPAREN RPAREN { PrintEndLine }
+
+expr_list:
+  | expr COMMA expr_list { $1 :: $3 }
+  | expr                 { [$1] }
+  | /* empty */          { [] }
 ;
