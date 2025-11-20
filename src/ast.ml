@@ -7,6 +7,7 @@ type type_annotation =
   | TUnit
   | TRef of type_annotation
   | TFun of type_annotation * type_annotation
+  | TTuple of type_annotation list
 
 (* The abstract syntax tree (AST) type for the calc language *)
 type ast =
@@ -49,6 +50,8 @@ type ast =
 
   | Fun of string * type_annotation * ast
   | App of ast * ast
+  | Tuple of ast list
+  | TupleAccess of ast * int
 
 let rec unparse_type_annotation = function
   | TInt -> "int"
@@ -56,6 +59,7 @@ let rec unparse_type_annotation = function
   | TUnit -> "unit"
   | TRef t -> "ref " ^ unparse_type_annotation t
   | TFun (t1, t2) -> "(" ^ unparse_type_annotation t1 ^ " -> " ^ unparse_type_annotation t2 ^ ")"
+  | TTuple ts -> "(" ^ String.concat " * " (List.map unparse_type_annotation ts) ^ ")"
 
 let paren = fun p q s -> if p > q then "("^s^")" else s
 
@@ -96,3 +100,5 @@ let rec unparse_ast p e =
   | PrintEndLine -> "printEndLine()"
   | Fun (param, typ, body) -> paren p 1 ("fun (" ^ param ^ ": " ^ unparse_type_annotation typ ^ ") -> " ^ unparse_ast 1 body)
   | App (e1, e2) -> paren p 40 (unparse_ast 40 e1 ^ "(" ^ unparse_ast 0 e2 ^ ")")
+  | Tuple es -> "(" ^ String.concat ", " (List.map (unparse_ast 0) es) ^ ")"
+  | TupleAccess (e, i) -> paren p 40 (unparse_ast 40 e ^ "." ^ string_of_int i)

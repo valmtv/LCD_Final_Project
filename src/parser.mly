@@ -10,14 +10,14 @@ open Ast
 %token NEW FREE DEREF ASSIGN
 %token PRINTINT PRINTBOOL PRINTENDLINE
 %token SEMICOLON COMMA COLON ARROW
-%token FUN TINT TBOOL TUNIT TREF
+%token FUN TINT TBOOL TUNIT TREF DOT
 
 %start main
 %type <Ast.ast> main
 
 %%
 main:
-  expr EOF                { $1 }
+  | expr EOF                { $1 }
 
 expr:
   | LET bindings IN expr  { Let($2, $4) }
@@ -34,8 +34,16 @@ typ:
   | typ_arrow             { $1 }
 
 typ_arrow:
-  | typ_base ARROW typ_arrow { TFun($1, $3) }
-  | typ_base              { $1 }
+  | typ_tuple ARROW typ_arrow { TFun($1, $3) }
+  | typ_tuple                 { $1 }
+
+typ_tuple:
+  | typ_base TIMES typ_tuple_list { TTuple($1 :: $3) }
+  | typ_base                      { $1 }
+
+typ_tuple_list:
+  | typ_base TIMES typ_tuple_list { $1 :: $3 }
+  | typ_base                      { [$1] }
 
 typ_base:
   | TINT                  { TInt }
@@ -53,7 +61,9 @@ expr_no_seq:
   | assign                { $1 }
 
 seq:
-  | seq SEMICOLON assign  { Seq($1, $3) }
+  | assign SEMICOLON seq  { Seq($1, $3) }
+  | assign SEMICOLON assign { Seq($1, $3) }
+  | seq SEMICOLON assign { Seq($1, $3) }
   | assign                { $1 }
 
 assign:
@@ -90,6 +100,7 @@ term:
 
 app:
   | app LPAREN expr RPAREN { App($1, $3) }
+  | app DOT INT            { TupleAccess($1, $3) }
   | factor                 { $1 }
 
 factor:
@@ -97,8 +108,12 @@ factor:
   | FALSE                 { Bool false }
   | INT                   { Num $1 }
   | ID                    { Id $1 }
-  | LPAREN RPAREN         { Unit }
-  | LPAREN expr RPAREN    { $2 }
+  | LPAREN expr_list RPAREN { 
+      match $2 with 
+      | [] -> Unit 
+      | [e] -> e 
+      | es -> Tuple(es) 
+    }  
   | MINUS factor          { Neg $2 }
   | NOT factor            { Not $2 }
   | DEREF factor          { Deref $2 }
@@ -107,4 +122,8 @@ factor:
   | PRINTINT LPAREN expr RPAREN { PrintInt $3 }
   | PRINTBOOL LPAREN expr RPAREN { PrintBool $3 }
   | PRINTENDLINE LPAREN RPAREN { PrintEndLine }
-;
+
+expr_list:
+  | expr COMMA expr_list { $1 :: $3 }
+  | expr                 { [$1] }
+  | /* empty */          { [] }

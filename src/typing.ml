@@ -6,6 +6,7 @@ type calc_type =
   | UnitT
   | RefT of calc_type
   | FunT of calc_type * calc_type
+  | TupleT of calc_type list
   | None of string
 
 type ann = calc_type
@@ -51,6 +52,9 @@ type ast =
   | Fun of ann * string * calc_type * ast
   | App of ann * ast * ast
 
+  | Tuple of ann * ast list
+  | TupleAccess of ann * ast * int
+
 let type_of = function
   | Num _ -> IntT
   | Bool _ -> BoolT
@@ -92,6 +96,9 @@ let type_of = function
   | Fun (ann,_,_,_) -> ann
   | App (ann,_,_) -> ann
 
+  | Tuple (ann, _) -> ann
+  | TupleAccess (ann, _, _) -> ann
+
 let mk_add t e1 e2 = Add (t,e1,e2)
 let mk_sub t e1 e2 = Sub (t,e1,e2)
 let mk_mul t e1 e2 = Mul (t,e1,e2)
@@ -117,6 +124,7 @@ let rec unparse_type = function
   | UnitT -> "unit"
   | RefT t -> "ref " ^ unparse_type t
   | FunT (t1, t2) -> "(" ^ unparse_type t1 ^ " -> " ^ unparse_type t2 ^ ")"
+  | TupleT ts -> "(" ^ String.concat " * " (List.map unparse_type ts) ^ ")"
   | None m -> "typing error: "^m
 
 let rec type_annotation_to_calc_type = function
@@ -125,6 +133,7 @@ let rec type_annotation_to_calc_type = function
   | Ast.TUnit -> UnitT
   | Ast.TRef t -> RefT (type_annotation_to_calc_type t)
   | Ast.TFun (t1, t2) -> FunT (type_annotation_to_calc_type t1, type_annotation_to_calc_type t2)
+  | Ast.TTuple ts -> TupleT (List.map type_annotation_to_calc_type ts)
 
 let type_int_int_int_bin_op mk e1 e2 =
   match type_of e1, type_of e2 with
@@ -277,5 +286,21 @@ let rec typecheck_env env e =
            else
              App (None "Function argument type mismatch", e1', e2')
        | _ -> App (None "Expecting function type", e1', e2'))
+
+  | Ast.Tuple es ->
+      let typed_es = List.map (typecheck_env env) es in
+      let types = List.map type_of typed_es in
+      Tuple (TupleT types, typed_es)
+
+  | Ast.TupleAccess (e, i) ->
+      let typed_e = typecheck_env env e in
+      (match type_of typed_e with
+       | TupleT ts ->
+           if i > 0 && i <= List.length ts then
+             let t = List.nth ts (i - 1) in
+             TupleAccess (t, typed_e, i)
+           else
+             TupleAccess (None ("Tuple index out of bounds: " ^ string_of_int i), typed_e, i)
+       | _ -> TupleAccess (None "Expected tuple type for access", typed_e, i))
 
 let typecheck e = typecheck_env Env.empty_env e

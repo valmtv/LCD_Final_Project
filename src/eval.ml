@@ -8,6 +8,7 @@ type result =
   | UnitV
   | RefV of result ref
   | ClosureV of string * Ast.ast * result Env.env
+  | TupleV of result list
 
 let rec unparse_result = function
   | IntV n -> string_of_int n
@@ -15,6 +16,7 @@ let rec unparse_result = function
   | UnitV -> "()"
   | RefV r -> "<ref " ^ unparse_result !r ^ ">"
   | ClosureV _ -> "<function>"
+  | TupleV vs -> "(" ^ String.concat ", " (List.map unparse_result vs) ^ ")"
 
 let int_int_binop f r1 r2 =
   match r1, r2 with
@@ -154,5 +156,17 @@ let rec eval_env env e =
            let env'' = Env.bind env' param v2 in
            eval_env env'' body
        | _ -> failwith "Runtime error: applying non-function")
+    
+  | Tuple es -> 
+      TupleV (List.map (eval_env env) es)
+
+  | TupleAccess (e, i) ->
+      (match eval_env env e with
+       | TupleV vs ->
+           if i > 0 && i <= List.length vs then
+             List.nth vs (i - 1)
+           else
+             failwith "Runtime error: Tuple index out of bounds"
+       | _ -> failwith "Runtime error: Accessing non-tuple")
 
 let eval e = eval_env Env.empty_env e
