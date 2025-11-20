@@ -31,7 +31,7 @@ A functional-imperative language compiler with first-class functions, mutable re
 
 - **Type Inference**: Static type checking with error messages
 - **Optimization**: Constant folding and propagation (enable with `OPT=1` flag)
-- **LLVM Backend**: Generates optimized native code
+- **LLVM**: Generates optimized native code
 - **Runtime**: Memory management and closure implementation
 
 ## Architecture
