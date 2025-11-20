@@ -1,5 +1,7 @@
 open Typing
 
+module StringMap = Map.Make(String)
+
 type register = int
 
 type label = string
@@ -80,7 +82,55 @@ let get_apply_closure_name param_t ret_t =
   | BoolT, BoolT -> "apply_closure_i1_i1"
   (* Use generic pointer implementation for any pointer types (Functions, Tuples, Refs) *)
   | t1, t2 when is_ptr_type t1 && is_ptr_type t2 -> "apply_closure_closure_closure"
+  | IntT, t2 when is_ptr_type t2 -> "apply_closure_i32_ptr"
+  | BoolT, t2 when is_ptr_type t2 -> "apply_closure_i1_ptr"
+  | t1, IntT when is_ptr_type t1 -> "apply_closure_ptr_i32"
+  | t1, BoolT when is_ptr_type t1 -> "apply_closure_ptr_i1"
   | _ -> "apply_closure_i32_i32" (* default fallback *)
+
+(* Helper to find free variables and their types in an AST *)
+let rec get_free_vars e =
+  let open Typing in
+  match e with
+  | Num _ | Bool _ | Unit | Str _ | PrintEndLine _ -> StringMap.empty
+  | Id (t, x) -> StringMap.singleton x t
+  | Add (_, e1, e2) | Sub (_, e1, e2) | Mul (_, e1, e2) | Div (_, e1, e2) 
+  | Eq (_, e1, e2) | Neq (_, e1, e2) | Lt (_, e1, e2) | Le (_, e1, e2) 
+  | Gt (_, e1, e2) | Ge (_, e1, e2) | And (_, e1, e2) | Or (_, e1, e2) 
+  | Assign (_, e1, e2) | While (_, e1, e2) | Seq (_, e1, e2) 
+  | App (_, e1, e2) ->
+      let fvs1 = get_free_vars e1 in
+      let fvs2 = get_free_vars e2 in
+      StringMap.union (fun _ t1 _ -> Some t1) fvs1 fvs2
+  | Neg (_, e) | Not (_, e) | New (_, e) | Deref (_, e) | Free (_, e) 
+  | PrintInt (_, e) | PrintBool (_, e) | PrintString (_, e) 
+  | IntToString (_, e) | Fst (_, e) | Snd (_, e) | TupleAccess (_, e, _) 
+  | RecordAccess (_, e, _) | ListAccess (_, e, _) ->
+      get_free_vars e
+  | If (_, e1, e2, e3) ->
+      let fvs1 = get_free_vars e1 in
+      let fvs2 = get_free_vars e2 in
+      let fvs3 = get_free_vars e3 in
+      StringMap.union (fun _ t1 _ -> Some t1) fvs1 (StringMap.union (fun _ t1 _ -> Some t1) fvs2 fvs3)
+  | Let (_, bindings, body) ->
+      let fvs_bindings = List.fold_left (fun acc (_, e) -> 
+          StringMap.union (fun _ t1 _ -> Some t1) acc (get_free_vars e)
+      ) StringMap.empty bindings in
+      let bound_vars = List.map fst bindings in
+      let fvs_body = get_free_vars body in
+      let fvs_body_clean = List.fold_left (fun acc x -> StringMap.remove x acc) fvs_body bound_vars in
+      StringMap.union (fun _ t1 _ -> Some t1) fvs_bindings fvs_body_clean
+  | Fun (_, param, _, body) ->
+      let fvs = get_free_vars body in
+      StringMap.remove param fvs
+  | Tuple (_, es) | List (_, es) ->
+      List.fold_left (fun acc e -> 
+          StringMap.union (fun _ t1 _ -> Some t1) acc (get_free_vars e)
+      ) StringMap.empty es
+  | Record (_, fields) ->
+      List.fold_left (fun acc (_, e) -> 
+          StringMap.union (fun _ t1 _ -> Some t1) acc (get_free_vars e)
+      ) StringMap.empty fields
 
 (* Code generation function *)
 
@@ -201,6 +251,7 @@ let rec compile_llvm env e label block =
       (bound_env, new_label, new_block, acc_blocks @ new_blocks)
     ) (env', label, block, []) bindings in
     let r_body, env_final, l_final, b_final, bs_body = compile_llvm env'' body l' b' in
+  
     (r_body, env_final, l_final, b_final, bs' @ bs_body)
 
   (* Reference operations *)
@@ -256,7 +307,8 @@ let rec compile_llvm env e label block =
     let r3, env3, l3, b3, bs3 = compile_llvm env1 e3 label_else [] in
 
     let bs = bs1 @ [(l1, b1 @ [BrI1 (r1, label_then, label_else)])] @
-             bs2 @ [(l2, b2 @ [BrLabel label_end])] @
+    
+          bs2 @ [(l2, b2 @ [BrLabel label_end])] @
              bs3 @ [(l3, b3 @ [BrLabel label_end])] in
 
     let ret = new_reg() in
@@ -281,7 +333,8 @@ let rec compile_llvm env e label block =
     let _r2, env2, l2, b2, bs2 = compile_llvm env1 e2 label_body [] in
 
     let bs = bs_pre @ bs1 @ [(l1, b1 @ [BrI1 (r1, label_body, label_end)])] @
-             bs2 @ [(l2, b2 @ [BrLabel label_cond])] in
+       
+       bs2 @ [(l2, b2 @ [BrLabel label_cond])] in
 
     (Const 0, env2, label_end, [], bs)
 
@@ -339,25 +392,46 @@ let rec compile_llvm env e label block =
       | _ -> failwith "Internal error: Fun must have FunT type"
     in
 
+    (* Analyze free variables *)
+    let fvs_map = get_free_vars body in
+    let fvs_map = StringMap.remove param fvs_map in
+    let fvs_list = StringMap.bindings fvs_map in (* List of (name, type) *)
+
     (* Compile function body with fresh counter *)
     (* We'll fix the numbering when we print the function *)
-    let param_reg = Register 1 in (* %1 in the function *)
-    let body_env = Env.begin_scope Env.empty_env in
-    let body_env' = Env.bind body_env param param_reg in
-
-  (* Use a temporary counter for function body *)
     let saved_reg_count = !reg_count in
     let saved_label_count = !label_count in
+ 
     reg_count := 1; (* Start at 1 for function body registers, next will be %2 *)
-    label_count := 0; (* Start at 0 for function body labels *)
-    let saved_fun_count = !fun_count in
-    fun_count := !fun_count - 1; (* Restore fun_count since we incremented it *)
+    label_count := 0;
+    (* Start at 0 for function body labels *)
+    
+    (* DO NOT reset fun_count! It must be globally unique *)
+
+    (* Prepare body environment *)
+    let body_env = Env.begin_scope Env.empty_env in
+    let body_env = Env.bind body_env param (Register 1) in
+
+    (* Unpack environment instructions at the start of body *)
+    let unpack_instrs, body_env = 
+       if fvs_list = [] then [], body_env
+       else
+          let env_types = List.map snd fvs_list in
+          let struct_type = TupleT env_types in
+          List.fold_left (fun (instrs, env) ((name, t), idx) ->
+             let gep_reg = new_reg () in
+             (* %0 is the environment pointer passed to the function *)
+             let gep_instr = GetElementPtr(gep_reg, struct_type, Register 0, [Const 0; Const idx]) in
+             let val_reg = new_reg () in
+             let load_instr = Load(val_reg, t, Register gep_reg) in
+             (instrs @ [gep_instr; load_instr], Env.bind env name (Register val_reg))
+          ) ([], body_env) (List.mapi (fun i x -> (x, i)) fvs_list)
+    in
 
     let body_result, _body_env_final, body_label, body_block, body_blocks =
-      compile_llvm body_env' body "entry" [] in
+      compile_llvm body_env body "entry" unpack_instrs in
 
     (* Restore counter for main function *)
-    fun_count := saved_fun_count;
     reg_count := saved_reg_count;
     label_count := saved_label_count;
 
@@ -371,14 +445,43 @@ let rec compile_llvm env e label block =
       body_blocks = body_blocks;
     } :: !function_defs;
 
-    (* Create a closure - pass function pointer and null environment *)
+    (* Create Closure in Parent Scope *)
+    let (env_reg, env_instrs, env_env) = 
+      if fvs_list = [] then (Const (-1), [], env)
+      else
+         let env_types = List.map snd fvs_list in
+         let struct_type = TupleT env_types in
+         
+         let size_ptr_reg = new_reg () in
+         let size_reg = new_reg () in
+         let mem_reg = new_reg () in
+         let init_instrs = [
+            GetElementPtr(size_ptr_reg, struct_type, Const (-1), [Const 1]);
+            PtrToInt(size_reg, Register size_ptr_reg);
+            Call(mem_reg, "malloc", [(IntT, Register size_reg)])
+         ] in
+         
+         let (final_env, final_instrs) = 
+            List.fold_left (fun (curr_env, curr_instrs) ((name, t), idx) ->
+                match Env.lookup curr_env name with
+                | Some r -> 
+                    let gep_reg = new_reg () in
+                    let gep_instr = GetElementPtr(gep_reg, struct_type, Register mem_reg, [Const 0; Const idx]) in
+                    let store_instr = Store(t, r, Register gep_reg) in
+                    (curr_env, curr_instrs @ [gep_instr; store_instr])
+                | None -> failwith ("Compiler error: Unbound free variable " ^ name)
+            ) (env, init_instrs) (List.mapi (fun i x -> (x, i)) fvs_list)
+         in
+         (Register mem_reg, final_instrs, final_env)
+    in
+
     let func_bitcast = new_reg() in
     let ret = new_reg() in
     let call_instr = [
       Bitcast (func_bitcast, "ptr", Const 0, "@" ^ fun_name);
-      Call (ret, "create_closure", [(FunT (param_type, return_type), Register func_bitcast); (RefT UnitT, Const (-1))]) (* Use RefT UnitT for ptr type *)
+      Call (ret, "create_closure", [(FunT (param_type, return_type), Register func_bitcast); (RefT UnitT, env_reg)]) (* Use RefT UnitT for ptr type *)
     ] in
-    (Register ret, env, label, block@call_instr, [])
+    (Register ret, env_env, label, block @ env_instrs @ call_instr, [])
 
   | App (ret_t, e1, e2) ->
     let r1, env1, l1, b1, bs1 = compile_llvm env e1 label block in
@@ -410,6 +513,7 @@ let rec compile_llvm env e label block =
      
      (* Define instructions for size & malloc *)
      (* Use Const (-1) for null to calculate size *)
+    
      let init_instrs = [
         GetElementPtr(size_ptr_reg, struct_type, Const (-1), [Const 1]);
         PtrToInt(size_reg, Register size_ptr_reg);
@@ -417,12 +521,7 @@ let rec compile_llvm env e label block =
      ] in
      
      (* Compile & Store elements *)
-     (* Start the fold with 'block @ init_instrs'.
-         ensures registers were allocated:
-        1. Malloc (regs %2, %3, %4)
-        2. Element 1 (regs %5...)
-        3. Element 2 (regs %6...) 
-     *)
+     
      let (final_env, final_label, final_block, final_bs) = 
        List.fold_left (fun (env, l, b, bs) (expr, idx) ->
          (* Compile expr. 'b' already contains history + init_instrs + previous exprs *)
@@ -430,12 +529,14 @@ let rec compile_llvm env e label block =
          
          (* gep/store registers *)
          let gep_reg = new_reg () in
-         let gep_instr = GetElementPtr(gep_reg, struct_type, Register mem_reg, [Const 0; Const idx]) in
+  
+        let gep_instr = GetElementPtr(gep_reg, struct_type, Register mem_reg, [Const 0; Const idx]) in
          let store_instr = Store(Typing.type_of expr, r_val, Register gep_reg) in
          
          (* Add to block *)
          (env', l', b' @ [gep_instr; store_instr], bs @ bs')
        ) (env, label, block @ init_instrs, []) (List.mapi (fun i e -> (e,i)) es) 
+     
      in
      
      (Register mem_reg, final_env, final_label, final_block, final_bs)
@@ -445,7 +546,7 @@ let rec compile_llvm env e label block =
       let tuple_type = Typing.type_of e in (* This is the TupleT {...} *)
       
       let gep_reg = new_reg () in
-      let gep_instr = GetElementPtr(gep_reg, tuple_type, r_tuple, [Const 0; Const (idx - 1)]) in
+      let gep_instr = GetElementPtr(gep_reg, tuple_type, r_tuple, [Const 0; Const idx]) in
       
       let ret_reg = new_reg () in
       let load_instr = Load(ret_reg, ann, Register gep_reg) in
@@ -458,7 +559,7 @@ let rec compile_llvm env e label block =
       
       (* gep to get pointer to first element (index 0) *)
       let gep_reg = new_reg () in
-      let gep_instr = GetElementPtr(gep_reg, tuple_type, r_tuple, [Const 0; Const 0]) in
+      let gep_instr = GetElementPtr(gep_reg, tuple_type, r_tuple, [Const 0; Const 0]) in 
       
       (* Load the value *)
       let ret_reg = new_reg () in
@@ -475,6 +576,7 @@ let rec compile_llvm env e label block =
       let gep_instr = GetElementPtr(gep_reg, tuple_type, r_tuple, [Const 0; Const 1]) in
       
       let ret_reg = new_reg () in
+  
       let load_instr = Load(ret_reg, ret_t, Register gep_reg) in
       
       (Register ret_reg, env1, l1, b1 @ [gep_instr; load_instr], bs1)
@@ -489,7 +591,8 @@ let rec compile_llvm env e label block =
      
      (* Assuming the struct size logic matches Tuple's malloc strategy *)
      let init_instrs = [
-        GetElementPtr(size_ptr_reg, struct_type, Const (-1), [Const 1]);
+        GetElementPtr(size_ptr_reg, struct_type, 
+          Const (-1), [Const 1]);
         PtrToInt(size_reg, Register size_ptr_reg);
         Call(mem_reg, "malloc", [(IntT, Register size_reg)])
      ] in
@@ -499,6 +602,7 @@ let rec compile_llvm env e label block =
        List.fold_left (fun (env, l, b, bs) ((_, expr), idx) ->
          let r_val, env', l', b', bs' = compile_llvm env expr l b in
          
+      
          let gep_reg = new_reg () in
          let gep_instr = GetElementPtr(gep_reg, struct_type, Register mem_reg, [Const 0; Const idx]) in
          let store_instr = Store(Typing.type_of expr, r_val, Register gep_reg) in
@@ -506,6 +610,7 @@ let rec compile_llvm env e label block =
          (env', l', b' @ [gep_instr; store_instr], bs @ bs')
        ) (env, label, block @ init_instrs, []) (List.mapi (fun i e -> (e,i)) sorted_fields) 
      in
+   
      (Register mem_reg, final_env, final_label, final_block, final_bs)
 
   | RecordAccess (ann, e, id) ->
@@ -530,7 +635,8 @@ let rec compile_llvm env e label block =
       
       (Register ret_reg, env1, l1, b1 @ [gep_instr; load_instr], bs1)
 
-    | List (ann, es) ->
+    
+  | List (ann, es) ->
       (* Determine element type from the annotation (ListT t) *)
       let elem_type = match ann with
         | ListT t -> t
@@ -544,7 +650,8 @@ let rec compile_llvm env e label block =
       let mem_reg = new_reg () in
 
       let init_instrs = [
-         GetElementPtr(size_ptr_reg, elem_type, Const (-1), [Const len]);(* ptr = &null[len] *)
+         GetElementPtr(size_ptr_reg, elem_type, Const (-1), [Const len]);(* ptr 
+          = &null[len] *)
          PtrToInt(size_reg, Register size_ptr_reg);
          Call(mem_reg, "malloc", [(IntT, Register size_reg)])
       ] in
@@ -555,13 +662,15 @@ let rec compile_llvm env e label block =
           let r_val, env', l', b', bs' = compile_llvm env expr l b in
           
           (* &arr[i] *)
+      
           let gep_reg = new_reg () in
           let gep_instr = GetElementPtr(gep_reg, elem_type, Register mem_reg, [Const idx]) in
           let store_instr = Store(elem_type, r_val, Register gep_reg) in
           
           (env', l', b' @ [gep_instr; store_instr], bs @ bs')
         ) (env, label, block @ init_instrs, []) (List.mapi (fun i e -> (e,i)) es) 
-      in
+     
+       in
       
       (Register mem_reg, final_env, final_label, final_block, final_bs)
 
@@ -573,7 +682,7 @@ let rec compile_llvm env e label block =
       
        let elem_type = ann in
       
-      (* &list[idx] *)
+      (* &list[idx] *) 
       let gep_reg = new_reg () in
       (* For simple arrays, gep takes [idx] not [0; idx] *)
       let gep_instr = GetElementPtr(gep_reg, elem_type, r_list, [r_idx]) in
@@ -608,11 +717,15 @@ let prologue =
    "declare i32 @apply_closure_i1_i32(ptr, i32)";
    "declare i32 @apply_closure_i1_i1(ptr, i32)";
    "declare ptr @apply_closure_closure_closure(ptr, ptr)";
+   "declare ptr @apply_closure_i32_ptr(ptr, i32)";
+   "declare ptr @apply_closure_i1_ptr(ptr, i32)";
+   "declare i32 @apply_closure_ptr_i32(ptr, ptr)";
+   "declare i32 @apply_closure_ptr_i1(ptr, ptr)";
    ""]
 
 let epilogue =
    ["  ret i32 0";
-    "}"]
+   "}"]
 
 let unparse_register n = "%"^string_of_int n
 
@@ -688,12 +801,16 @@ let unparse_llvm_i = function
       let ret_type =
         if String.sub fname 0 (min 13 (String.length fname)) = "apply_closure" &&
            not (fname = "apply_closure_closure_closure") then
-          "i32"  (* Most apply_closure functions return i32 *)
+           if fname = "apply_closure_i32_ptr" || fname = "apply_closure_i1_ptr" then
+              "ptr"
+           else
+              "i32"  (* Most apply_closure functions return i32 *)
         else if fname = "apply_closure_closure_closure" then
           "ptr"  (* closure -> closure returns ptr *)
         else if fname = "create_closure" then
           "ptr"
-        else if List.mem fname ["new_ref_int"; "new_ref_bool"; "new_ref_ref"] then
+        else if List.mem fname ["new_ref_int";
+          "new_ref_bool"; "new_ref_ref"] then
           "ptr"
         else if fname = "deref_int" then
           "i32"
@@ -702,7 +819,8 @@ let unparse_llvm_i = function
         else if List.mem fname ["deref_ref"] then
           "ptr"
         else
-          "ptr"  (* default to ptr *)
+          "ptr" 
+         (* default to ptr *)
       in
       "  "^unparse_register r^" = call "^ret_type^" @"^fname^"("^String.concat ", " arg_strs^")"
   | CallVoid (fname, args) ->
@@ -745,13 +863,10 @@ let print_llvm (_ret,_env,label,instructions,blocks) _t =
       (* If strings have special chars they might need escaping *)
       Printf.printf "@%s = private unnamed_addr constant [%d x i8] c\"%s\\00\", align 1\n" name len s
     ) (List.rev !string_constants);
-
     (* Print the prologue *)
     List.iter print_endline prologue;
-
     (* Print function definitions *)
     List.iter print_function_def (List.rev !function_defs);
-
     (* Print main function *)
     print_endline "define i32 @main() #0 {";
     (* Print the blocks *)

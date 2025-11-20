@@ -149,7 +149,6 @@ let rec unparse_type = function
   | TupleT ts -> "(" ^ String.concat " * " (List.map unparse_type ts) ^ ")"
   | RecordT fs -> "{" ^ String.concat "; " (List.map (fun (id,t) -> id ^ ":" ^ unparse_type t) fs) ^ "}"
   | ListT t -> "[" ^ unparse_type t ^ "]"
-  
   | None m -> "typing error: "^m
 
 let rec type_annotation_to_calc_type = function
@@ -232,6 +231,7 @@ let rec typecheck_env env e =
         let new_env = Env.bind acc_env id expr_type in
         (new_env, acc_bindings @ [(id, typed_expr)])
       ) (env', []) bindings in
+      
       let typed_body = typecheck_env env'' body in
       let body_type = type_of typed_body in
       mk_let body_type typed_bindings typed_body
@@ -340,8 +340,8 @@ let rec typecheck_env env e =
       let typed_e = typecheck_env env e in
       (match type_of typed_e with
        | TupleT ts ->
-           if i > 0 && i <= List.length ts then
-             let t = List.nth ts (i - 1) in
+           if i >= 0 && i < List.length ts then
+             let t = List.nth ts i in
              TupleAccess (t, typed_e, i)
            else
              TupleAccess (None ("Tuple index out of bounds: " ^ string_of_int i), typed_e, i)

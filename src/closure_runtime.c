@@ -33,6 +33,26 @@ closure* apply_closure_closure_closure(closure* c, closure* arg) {
     return f(c->env, arg);
 }
 
+closure* apply_closure_i32_ptr(closure* c, int32_t arg) {
+    closure* (*f)(void*, int32_t) = (closure* (*)(void*, int32_t))c->func_ptr;
+    return f(c->env, arg);
+}
+
+closure* apply_closure_i1_ptr(closure* c, int32_t arg) {
+    closure* (*f)(void*, int32_t) = (closure* (*)(void*, int32_t))c->func_ptr;
+    return f(c->env, arg);
+}
+
+int32_t apply_closure_ptr_i32(closure* c, closure* arg) {
+    int32_t (*f)(void*, closure*) = (int32_t (*)(void*, closure*))c->func_ptr;
+    return f(c->env, arg);
+}
+
+int32_t apply_closure_ptr_i1(closure* c, closure* arg) {
+    int32_t (*f)(void*, closure*) = (int32_t (*)(void*, closure*))c->func_ptr;
+    return f(c->env, arg);
+}
+
 void free_closure(closure* c) {
     free(c);
 }

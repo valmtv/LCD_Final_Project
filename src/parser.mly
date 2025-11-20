@@ -31,8 +31,8 @@ expr:
   | seq                   { $1 }
 
 while_body:
-  | LPAREN seq RPAREN     { $2 }
-  | assign                { $1 }
+  | LPAREN expr RPAREN     { $2 }
+  | assign                 { $1 }
 
 typ:
   | typ_arrow             { $1 }
