@@ -452,6 +452,33 @@ let rec compile_llvm env e label block =
       
       (Register ret_reg, env1, l1, b1 @ [gep_instr; load_instr], bs1)
 
+  | Fst (ret_t, e) ->
+      let r_tuple, env1, l1, b1, bs1 = compile_llvm env e label block in
+      let tuple_type = type_of e in (* Should be TupleT [t1; t2] *)
+      
+      (* gep to get pointer to first element (index 0) *)
+      let gep_reg = new_reg () in
+      let gep_instr = GetElementPtr(gep_reg, tuple_type, r_tuple, [Const 0; Const 0]) in
+      
+      (* Load the value *)
+      let ret_reg = new_reg () in
+      let load_instr = Load(ret_reg, ret_t, Register gep_reg) in
+      
+      (Register ret_reg, env1, l1, b1 @ [gep_instr; load_instr], bs1)
+
+  | Snd (ret_t, e) ->
+      let r_tuple, env1, l1, b1, bs1 = compile_llvm env e label block in
+      let tuple_type = type_of e in
+      
+      (* gep to get pointer to second element (index 1) *)
+      let gep_reg = new_reg () in
+      let gep_instr = GetElementPtr(gep_reg, tuple_type, r_tuple, [Const 0; Const 1]) in
+      
+      let ret_reg = new_reg () in
+      let load_instr = Load(ret_reg, ret_t, Register gep_reg) in
+      
+      (Register ret_reg, env1, l1, b1 @ [gep_instr; load_instr], bs1)
+
   | Record (ann, sorted_fields) ->
      let struct_type = type_of (Record(ann, sorted_fields)) in
      
