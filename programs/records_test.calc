@@ -18,15 +18,16 @@ printEndLine();
     (let swap = fun (r: {x:int; y:int}) -> {x = r.y; y = r.x} in
       let r4 = {x = 5; y = 10} in
       let swapped = swap(r4) in
+     
       printInt(swapped.x);
       printInt(swapped.y);
       printEndLine();
 
       (let ptr = new(50) in
-        let r5 = {ref = ptr; val = 60} in
-        printInt(!(r5.ref));
-        r5.ref := 51;
-        printInt(!(r5.ref))
+        let r5 = {ptr_ref = ptr; val = 60} in
+        printInt(!(r5.ptr_ref));
+        r5.ptr_ref := 51;
+        printInt(!(r5.ptr_ref))
       )
     )
   )

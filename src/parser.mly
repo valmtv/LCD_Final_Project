@@ -137,5 +137,5 @@ expr_list:
   | /* empty */          { [] }
 
 record_fields:
-  | ID EQ expr SEMICOLON record_fields { ($1, $3) :: $5 }
-  | ID EQ expr                         { [($1, $3)] }
+  | ID EQ expr_no_seq SEMICOLON record_fields { ($1, $3) :: $5 }
+  | ID EQ expr_no_seq                         { [($1, $3)] }
