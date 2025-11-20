@@ -14,7 +14,7 @@ open Ast
 %token LBRACE RBRACE LBRACKET RBRACKET
 %token <string> STRING 
 %token TSTRING PRINTSTRING
-%token INTTOSTRING
+%token INTTOSTRING FST SND
 
 %start main
 %type <Ast.ast> main
@@ -128,6 +128,8 @@ factor:
       | [e] -> e 
       | es -> Tuple(es) 
     }  
+  | FST LPAREN expr RPAREN { Fst $3 }
+  | SND LPAREN expr RPAREN { Snd $3 }
   | MINUS factor          { Neg $2 }
   | NOT factor            { Not $2 }
   | DEREF factor          { Deref $2 }

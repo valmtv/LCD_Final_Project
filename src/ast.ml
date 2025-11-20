@@ -59,6 +59,8 @@ type ast =
 
   | Tuple of ast list
   | TupleAccess of ast * int
+  | Fst of ast
+  | Snd of ast
   | Record of (string * ast) list
   | RecordAccess of ast * string
   | List of ast list
@@ -119,6 +121,8 @@ let rec unparse_ast p e =
   | App (e1, e2) -> paren p 40 (unparse_ast 40 e1 ^ "(" ^ unparse_ast 0 e2 ^ ")")
   | Tuple es -> "(" ^ String.concat ", " (List.map (unparse_ast 0) es) ^ ")"
   | TupleAccess (e, i) -> paren p 40 (unparse_ast 40 e ^ "." ^ string_of_int i)
+  | Fst e -> "fst(" ^ unparse_ast 0 e ^ ")"
+  | Snd e -> "snd(" ^ unparse_ast 0 e ^ ")"
   | Record fields -> "{" ^ String.concat "; " (List.map (fun (id, e) -> id ^ " = " ^ unparse_ast 0 e) fields) ^ "}"
   | RecordAccess (e, id) -> paren p 40 (unparse_ast 40 e ^ "." ^ id)
   | List es -> "[" ^ String.concat ", " (List.map (unparse_ast 0) es) ^ "]"

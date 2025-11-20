@@ -185,6 +185,18 @@ let rec eval_env env e =
              failwith "Runtime error: Tuple index out of bounds"
        | _ -> failwith "Runtime error: Accessing non-tuple")
 
+  | Fst e ->
+      (match eval_env env e with
+       | TupleV [v1; _] -> v1
+       | TupleV _ -> failwith "Runtime error: fst expects a pair"
+       | _ -> failwith "Runtime error: applying fst to non-tuple")
+
+  | Snd e ->
+      (match eval_env env e with
+       | TupleV [_; v2] -> v2
+       | TupleV _ -> failwith "Runtime error: snd expects a pair"
+       | _ -> failwith "Runtime error: applying snd to non-tuple")
+
   | Record fields ->
       let v_fields = List.map (fun (id, e) -> (id, eval_env env e)) fields in
       RecordV v_fields

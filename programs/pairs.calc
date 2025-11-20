@@ -1,0 +1,6 @@
+let p = (10, 20) in
+let p2 = (30, 40) in
+printInt(fst(p));
+printInt(snd(p));
+printInt(fst(p2) + snd(p));
+printEndLine()
