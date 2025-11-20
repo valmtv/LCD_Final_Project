@@ -11,6 +11,7 @@ open Ast
 %token PRINTINT PRINTBOOL PRINTENDLINE
 %token SEMICOLON COMMA COLON ARROW
 %token FUN TINT TBOOL TUNIT TREF DOT
+%token LBRACE RBRACE
 
 %start main
 %type <Ast.ast> main
@@ -45,12 +46,17 @@ typ_tuple_list:
   | typ_base TIMES typ_tuple_list { $1 :: $3 }
   | typ_base                      { [$1] }
 
+typ_record_fields:
+  | ID COLON typ SEMICOLON typ_record_fields { ($1, $3) :: $5 }
+  | ID COLON typ                             { [($1, $3)] }
+
 typ_base:
   | TINT                  { TInt }
   | TBOOL                 { TBool }
   | TUNIT                 { TUnit }
   | TREF typ_base         { TRef $2 }
   | LPAREN typ RPAREN     { $2 }
+  | LBRACE typ_record_fields RBRACE { TRecord $2 }
 
 bindings:
   | ID EQ expr_no_seq              { [($1, $3)] }
@@ -101,6 +107,7 @@ term:
 app:
   | app LPAREN expr RPAREN { App($1, $3) }
   | app DOT INT            { TupleAccess($1, $3) }
+  | app DOT ID             { RecordAccess($1, $3) }
   | factor                 { $1 }
 
 factor:
@@ -118,6 +125,7 @@ factor:
   | NOT factor            { Not $2 }
   | DEREF factor          { Deref $2 }
   | NEW LPAREN expr RPAREN { New $3 }
+  | LBRACE record_fields RBRACE { Record $2 }
   | FREE LPAREN expr RPAREN { Free $3 }
   | PRINTINT LPAREN expr RPAREN { PrintInt $3 }
   | PRINTBOOL LPAREN expr RPAREN { PrintBool $3 }
@@ -127,3 +135,7 @@ expr_list:
   | expr COMMA expr_list { $1 :: $3 }
   | expr                 { [$1] }
   | /* empty */          { [] }
+
+record_fields:
+  | ID EQ expr SEMICOLON record_fields { ($1, $3) :: $5 }
+  | ID EQ expr                         { [($1, $3)] }

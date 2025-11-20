@@ -45,6 +45,8 @@ rule read = parse
   | '/'                      { DIV }
   | '('                      { LPAREN }
   | ')'                      { RPAREN }
+  | '{'                      { LBRACE }
+  | '}'                      { RBRACE }
   | ';'                      { SEMICOLON }
   | ','                      { COMMA }
   | '.'                      { DOT }
