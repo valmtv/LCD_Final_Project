@@ -1,0 +1,5 @@
+let r1 = {x = 10; y = 20; z = 30} in
+printInt(r1.x);
+printInt(r1.y);
+printInt(r1.z);
+printEndLine()

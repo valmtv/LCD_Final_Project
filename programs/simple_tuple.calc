@@ -1,0 +1,5 @@
+let t1 = (10, 20, 30) in
+printInt(t1.0);
+printInt(t1.1);
+printInt(t1.2);
+printEndLine()
