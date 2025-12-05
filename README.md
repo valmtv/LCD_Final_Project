@@ -8,7 +8,7 @@
 
 A functional-imperative language compiler with first-class functions, mutable references, and data structures. Includes both an interpreter and an LLVM compiler.
 
-Report available at: [Report.pdf](Report.pdf)
+Report available at: [Report.pdf](REPORT.pdf)
 
 ## Features
 
