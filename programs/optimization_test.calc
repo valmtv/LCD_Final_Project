@@ -1,3 +1,4 @@
 let x = 10 + 20 in
 let y = (if true then 5 else 100) in
-printInt(x + y)
+printInt(x + y);
+printEndLine()
